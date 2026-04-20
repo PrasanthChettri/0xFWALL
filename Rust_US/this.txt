@@ -1,0 +1,6 @@
+KEEP_PKGS="adduser apt bash binutils ca-certificates clang coreutils dpkg gcc g++ iproute2 libc6-dev libbpf-dev
+libbpf1 libelf-dev linux-libc-dev make openssh-server pkg-config rustup cargo rustc sudo systemd systemd-sysv util-
+linux zlib1g-dev"
+comm -23 <(apt-mark showmanual | sort) <(printf '%s\n' $KEEP_PKGS | sort) | tee /tmp/purge-manual.txt
+sudo apt-mark auto $(cat /tmp/purge-manual.txt)
+sudo apt -s autoremove --purge
