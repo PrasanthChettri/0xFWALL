@@ -89,10 +89,9 @@ impl XdpProgram {
     pub fn poll_logs(&self, ms: u16) -> Option<BlockedIpEvent> {
         let mut ip_event = BlockedIpEvent::new();
 
-        // ↓ fix 2: take a raw *mut pointer to the local; was `ip_event_ptr.as_ptr()`
         match unsafe { poll_logs(self.handle, &mut ip_event as *mut BlockedIpEvent, ms.into()) } {
-            0 => Some(ip_event),
-            _ => None,   // ← fix 3: was `- => None`
+            ret if ret > 0 => Some(ip_event),
+            _ => None,
         }
     }
 }

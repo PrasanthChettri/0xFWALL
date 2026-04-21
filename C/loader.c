@@ -27,7 +27,8 @@ struct bpf_metadata* get_bpf_obj(void) {
 void cleanup(void *) ; 
 int handle_ip_log_rb(void *ctx, void *data, size_t len) {
     struct bpf_metadata *bpf_md = (struct bpf_metadata *)ctx;
-    const struct blocked_ip_event *event = (const struct blocked_ip_event *)data  ;
+    const struct blocked_ip_event *event = (const struct blocked_ip_event *)data;
+
     if (!bpf_md || !bpf_md->latest_bie || !data) {
         return -1;
     }
@@ -46,6 +47,10 @@ int load_xdp(const char *obj_path, const char *ifname)
     int err;
     struct bpf_map *rule_map, *log_map; // Pointer to hold the map object
     bm = malloc(sizeof(struct bpf_metadata)) ; 
+    if (!bm) {
+        return -1;
+    }
+    memset(bm, 0, sizeof(*bm));
 
     /* ── Step 1: Load ELF object into memory & run verifier ── */
     bm->obj = bpf_object__open(obj_path);          // parse ELF, resolve BTF
@@ -101,6 +106,12 @@ int load_xdp(const char *obj_path, const char *ifname)
 
 void cleanup(void * bpf_md) {
     struct bpf_metadata *bpf_md_s = (struct bpf_metadata *) bpf_md ; 
+    if (!bpf_md_s) {
+        return;
+    }
+    if (bpf_md_s->ip_log_rb) {
+        ring_buffer__free(bpf_md_s->ip_log_rb);
+    }
     bpf_xdp_detach(bpf_md_s->ifindex, XDP_FLAGS_UPDATE_IF_NOEXIST, NULL);
     bpf_object__close(bpf_md_s->obj);
     free(bpf_md_s) ; 
@@ -108,8 +119,15 @@ void cleanup(void * bpf_md) {
 
 int poll_logs(void * bpf_md, struct blocked_ip_event *bie,  int ms) {
     struct bpf_metadata *bpf_md_s = (struct bpf_metadata *) bpf_md ; 
-    int err = ring_buffer__poll(bpf_md_s->ip_log_rb, ms);
-    bie = bpf_md_s->latest_bie ; 
+    int err;
+
+    if (!bpf_md_s || !bie || !bpf_md_s->ip_log_rb) {
+        return -1;
+    }
+
+    bpf_md_s->latest_bie = bie;
+    err = ring_buffer__poll(bpf_md_s->ip_log_rb, ms);
+    bpf_md_s->latest_bie = NULL;
     return err ; 
 }
 
