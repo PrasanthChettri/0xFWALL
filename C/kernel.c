@@ -14,7 +14,7 @@ struct {
 struct {
     __uint(type, BPF_MAP_TYPE_RINGBUF);
     __uint(max_entries, 1 << 20); // 1 MiB
-} blocked_ip_event  SEC(".maps");
+} blocked_ip_events  SEC(".maps");
 
 int _id ; 
 SEC("xdp")
@@ -41,7 +41,7 @@ int xdp_prog(struct xdp_md *ctx)
 
     bpf_printk("xdp ip src=%x dst=%x src_rule=%p dst_rule=%p",
                ip->saddr, ip->daddr, src_rule, dst_rule);
-    event = bpf_ringbuf_reserve(&blocked_ip_event, sizeof(*event), 0);
+    event = bpf_ringbuf_reserve(&blocked_ip_events, sizeof(*event), 0);
     if (!event) {
         return XDP_PASS ; 
     }

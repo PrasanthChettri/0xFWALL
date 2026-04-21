@@ -4,7 +4,7 @@
 #include <linux/types.h>
 
 #define RULE_MAP_ALIAS "rule_table"
-#define IP_LOG_MAP_ALIAS "blocked_ip_event"
+#define IP_LOG_MAP_ALIAS "blocked_ip_events"
 #define PROG_NAME "xdp_prog"
 #define MAX_BLOCKED_IPV4 1024
 

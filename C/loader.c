@@ -12,6 +12,9 @@ struct bpf_metadata {
     struct bpf_object *obj;
     struct bpf_program *prog;
     int prog_fd, ifindex, rule_map_fd, ip_log_map_fd;
+    struct ring_buffer *ip_log_rb ; 
+    struct blocked_ip_event *latest_bie ;
+
 } ;
 
 struct bpf_metadata *bm ; 
@@ -22,6 +25,22 @@ struct bpf_metadata* get_bpf_obj(void) {
 }
 
 void cleanup(void *) ; 
+int handle_ip_log_rb(void *ctx, void *data, size_t len) {
+    struct bpf_metadata *bpf_md = (struct bpf_metadata *)ctx;
+    const struct blocked_ip_event *event = (const struct blocked_ip_event *)data  ;
+    if (!bpf_md || !bpf_md->latest_bie || !data) {
+        return -1;
+    }
+
+    if (len != sizeof(struct blocked_ip_event)) {
+        return -1;
+    }
+
+    memcpy(bpf_md->latest_bie, event, sizeof(*event));
+    return 0;
+}
+
+
 int load_xdp(const char *obj_path, const char *ifname)
 {
     int err;
@@ -49,6 +68,7 @@ int load_xdp(const char *obj_path, const char *ifname)
     
     bm->rule_map_fd = bpf_map__fd(rule_map);
     bm->ip_log_map_fd = bpf_map__fd(log_map);
+    bm->ip_log_rb = ring_buffer__new(bm->ip_log_map_fd , handle_ip_log_rb, bm, NULL);
     if (bm->rule_map_fd < 0 || bm->ip_log_map_fd < 0) {
         err = -1;
         cleanup((void *)bm);
@@ -86,8 +106,11 @@ void cleanup(void * bpf_md) {
     free(bpf_md_s) ; 
 }
 
-void poll_logs(void * bpf_md) {
-    return ; 
+int poll_logs(void * bpf_md, struct blocked_ip_event *bie,  int ms) {
+    struct bpf_metadata *bpf_md_s = (struct bpf_metadata *) bpf_md ; 
+    int err = ring_buffer__poll(bpf_md_s->ip_log_rb, ms);
+    bie = bpf_md_s->latest_bie ; 
+    return err ; 
 }
 
 

@@ -25,7 +25,7 @@ async fn main() {
         print!("Hello") ; 
     }).await.unwrap() ;
 
-    let _handler = match XdpProgram::attach(k_path, ifname) {
+    let _handler: XdpProgram = match XdpProgram::attach(k_path, ifname) {
         Ok(xdp) => xdp,
         Err(err) => {
             eprintln!("attach failed: {err}");
@@ -33,13 +33,14 @@ async fn main() {
         }
     };
     
-    match XdpProgram::load_rules(&rules.blocked_ipv4, &rules.blocked_ports) {
+    match _handler.load_rules(&rules.blocked_ipv4, &rules.blocked_ports) {
         Ok(r) => print!("YAY") , 
         Err(val) => print!("NAY{val}") 
     }
-    tokio::spawn(async {
+    tokio::spawn(async move {
         for i in [0 .. 100 ] {
-            dbg!("_handler") ; 
+            let log = _handler.poll_logs(100) ;
+            dbg!(log) ;
         }
     }).await.unwrap() ;
 }
