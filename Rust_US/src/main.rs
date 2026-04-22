@@ -1,22 +1,26 @@
-use std::ffi::CString;
-use std::os::raw::c_char;
 use std::sync::atomic::{AtomicBool, Ordering} ; 
-use tokio::signal ; 
 use std::sync::Arc ; 
 use std::sync::Mutex ; 
 
+use config::AppConfig;
+use log_writer::LogWriter;
+use tokio::signal ; 
 use xdp::* ; 
+mod config ;
 mod xdp ;
 use rules::* ; 
 mod rules ;
-use tokio ;
-use serde::Deserialize;
+mod log_writer ;
 
 #[tokio::main]
 async fn main() {
-    let k_path = "../C/target/kernel.o";
-    let json_path = "rules.json" ; 
-    let ifname = "ens33";
+    let config = match AppConfig::load_from_file("config.yaml") {
+        Ok(config) => config,
+        Err(_) => {
+            eprintln!("failed to load config.yaml");
+            return;
+        }
+    };
 
     let is_main_loop_running = Arc::new(AtomicBool::new(true)) ; 
     let r = is_main_loop_running.clone() ; 
@@ -28,12 +32,12 @@ async fn main() {
         }
     ) ; 
 
-    let rules = match  Rules::load_from_file(&json_path) {
+    let rules = match  Rules::load_from_file(&config.rules_path) {
         Ok(rules) => rules ,
         Err(_) => panic!("F"), 
     } ;
 
-    let _handler: Arc<Mutex<XdpProgram>> = match XdpProgram::attach(k_path, ifname) {
+    let _handler: Arc<Mutex<XdpProgram>> = match XdpProgram::attach(&config.kernel_path, &config.interface) {
         Ok(xdp) => xdp,
         Err(err) => {
             eprintln!("attach failed: {err}");
@@ -42,18 +46,26 @@ async fn main() {
     };
     
     match _handler.clone().lock().unwrap().load_rules(&rules.blocked_ipv4, &rules.blocked_ports) {
-        Ok(r) => print!("YAY") , 
+        Ok(_) => print!("YAY") , 
         Err(val) => print!("NAY{val}") 
     }
 
+    let log_writer = LogWriter::spawn(&config.log_path, 1024);
     let r_read = is_main_loop_running.clone() ; 
     let handler_clone = _handler.clone() ; 
-    tokio::spawn(async move {
-        let mut handler = handler_clone.lock().unwrap() ; 
-        while(r_read.load(Ordering::SeqCst)) {
-            let log = handler.poll_logs(100) ;
-            dbg!(log) ;
+    let poll_task = tokio::spawn(async move {
+        let handler = handler_clone.lock().unwrap() ; 
+        while r_read.load(Ordering::SeqCst) {
+            if let Some(log) = handler.poll_logs(100) {
+                let _ = log_writer.try_write(log);
+            }
         }
         drop(handler) ; 
-    }).await.unwrap() ;
+        log_writer
+    });
+
+    let log_writer = poll_task.await.unwrap();
+    if let Err(err) = log_writer.shutdown().await {
+        eprintln!("log writer shutdown failed: {err}");
+    }
 }

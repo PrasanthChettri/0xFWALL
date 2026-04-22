@@ -2,6 +2,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <pthread.h>
 #include <bpf/libbpf.h>
 #include <bpf/bpf.h>
 #include <linux/if_link.h>
@@ -14,7 +15,7 @@ struct bpf_metadata {
     int prog_fd, ifindex, rule_map_fd, ip_log_map_fd;
     struct ring_buffer *ip_log_rb ; 
     struct blocked_ip_event *latest_bie ;
-
+    pthread_mutex_t ip_log_rb_lock;
 } ;
 
 struct bpf_metadata *bm ; 
@@ -51,6 +52,12 @@ int load_xdp(const char *obj_path, const char *ifname)
         return -1;
     }
     memset(bm, 0, sizeof(*bm));
+    err = pthread_mutex_init(&bm->ip_log_rb_lock, NULL);
+    if (err != 0) {
+        free(bm);
+        bm = NULL;
+        return -1;
+    }
 
     /* ── Step 1: Load ELF object into memory & run verifier ── */
     bm->obj = bpf_object__open(obj_path);          // parse ELF, resolve BTF
@@ -109,9 +116,14 @@ void cleanup(void * bpf_md) {
     if (!bpf_md_s) {
         return;
     }
+    pthread_mutex_lock(&bpf_md_s->ip_log_rb_lock);
     if (bpf_md_s->ip_log_rb) {
         ring_buffer__free(bpf_md_s->ip_log_rb);
+        bpf_md_s->ip_log_rb = NULL;
     }
+    bpf_md_s->latest_bie = NULL;
+    pthread_mutex_unlock(&bpf_md_s->ip_log_rb_lock);
+    pthread_mutex_destroy(&bpf_md_s->ip_log_rb_lock);
     bpf_xdp_detach(bpf_md_s->ifindex, XDP_FLAGS_UPDATE_IF_NOEXIST, NULL);
     bpf_object__close(bpf_md_s->obj);
     free(bpf_md_s) ; 
@@ -125,9 +137,11 @@ int poll_logs(void * bpf_md, struct blocked_ip_event *bie,  int ms) {
         return -1;
     }
 
+    pthread_mutex_lock(&bpf_md_s->ip_log_rb_lock);
     bpf_md_s->latest_bie = bie;
     err = ring_buffer__poll(bpf_md_s->ip_log_rb, ms);
     bpf_md_s->latest_bie = NULL;
+    pthread_mutex_unlock(&bpf_md_s->ip_log_rb_lock);
     return err ; 
 }
 
@@ -137,9 +151,14 @@ int load_rules(const struct rule_table* rt) {
         return -1 ;
     }
     printf("\n%p\n%u\n", rt->ipv4_list, *(rt->ipv4_list)) ;
-    __u8 SET = 1 ; 
+    struct rule_value value = {
+        .action = RULE_ACTION_DROP,
+    };
     for(int i = 0 ; i < rt->ipv4_count ; i++) {
-        int err = bpf_map_update_elem(bm->rule_map_fd, &(rt->ipv4_list[i]), &SET, BPF_ANY) ; 
+        struct ipv4_rule_key key = {
+            .addr = rt->ipv4_list[i],
+        };
+        int err = bpf_map_update_elem(bm->rule_map_fd, &key, &value, BPF_ANY) ; 
         if (err != 0 ) {
             return err ; 
         }

@@ -7,6 +7,8 @@
 #define IP_LOG_MAP_ALIAS "blocked_ip_events"
 #define PROG_NAME "xdp_prog"
 #define MAX_BLOCKED_IPV4 1024
+#define RULE_ACTION_DROP 1
+#define BLOCK_REASON_SRC_IPV4 1
 
 struct rule_table {
     const __u32 *ipv4_list;

@@ -21,6 +21,7 @@ SEC("xdp")
 int xdp_prog(struct xdp_md *ctx)
 {
     struct blocked_ip_event *event;
+    struct ipv4_rule_key src_key;
     void *data = (void *)(long)ctx->data;
     void *data_end = (void *)(long)ctx->data_end;
     struct ethhdr *eth = data;
@@ -36,14 +37,15 @@ int xdp_prog(struct xdp_md *ctx)
     if ((void *)(ip + 1) > data_end)
         return XDP_PASS;
 
-    struct rule_value *src_rule = bpf_map_lookup_elem(&rule_table, &ip->saddr);
-    struct rule_value *dst_rule = bpf_map_lookup_elem(&rule_table, &ip->daddr);
+    src_key.addr = ip->saddr;
+    struct rule_value *src_rule = bpf_map_lookup_elem(&rule_table, &src_key);
 
-    bpf_printk("xdp ip src=%x dst=%x src_rule=%p dst_rule=%p",
-               ip->saddr, ip->daddr, src_rule, dst_rule);
+    if (!src_rule || src_rule->action != RULE_ACTION_DROP)
+        return XDP_PASS;
+
     event = bpf_ringbuf_reserve(&blocked_ip_events, sizeof(*event), 0);
     if (!event) {
-        return XDP_PASS ; 
+        return XDP_DROP;
     }
     event->id = ++_id ; 
     event->timestamp_ns = bpf_ktime_get_ns();
@@ -52,9 +54,9 @@ int xdp_prog(struct xdp_md *ctx)
     event->src_port = 0;
     event->dst_port = 0;
     event->protocol = ip->protocol;
-    event->reason = 1;
+    event->reason = BLOCK_REASON_SRC_IPV4;
     bpf_ringbuf_submit(event, 0);
-    return XDP_PASS ; 
+    return XDP_DROP;
 
 }
 
