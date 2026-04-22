@@ -1,6 +1,8 @@
 use std::ffi::CString;
 use std::os::raw::{c_char, c_int, c_void};
 use std::net::Ipv4Addr;
+use std::sync::Arc ; 
+use std::sync::Mutex ; 
 
 #[repr(C)]
 struct RulesFfi {
@@ -56,7 +58,7 @@ impl Drop for XdpProgram {
 }
 
 impl XdpProgram {
-    pub fn attach(obj_path: &str, ifname: &str) -> Result<Self, i32> {
+    pub fn attach(obj_path: &str, ifname: &str) -> Result<Arc<Mutex<Self>>, i32> {
         let c_path   = CString::new(obj_path).map_err(|_| -1_i32)?;
         let c_ifname = CString::new(ifname).map_err(|_| -1_i32)?;
 
@@ -66,11 +68,15 @@ impl XdpProgram {
         }
 
         let bpf_obj = unsafe { get_bpf_obj() };
-        Ok(Self { handle: bpf_obj })
+        Ok(
+            Arc::new(
+                Mutex::new(Self { handle: bpf_obj })
+            )
+        )
     }
 
     pub fn load_rules(&self, ipv4_list: &[Ipv4Addr], port_list: &[u16]) -> Result<(), i32> {
-        let ipv4: Vec<u32> = ipv4_list.iter().copied().map(u32::from).collect();
+        let ipv4: Vec<u32> = ipv4_list.iter().copied().map(|x| u32::from(x).to_be()).collect();
         let rule_table = RulesFfi {
             ipv4_list:  ipv4.as_ptr(),
             ipv4_count: ipv4.len() as c_int,
@@ -91,7 +97,8 @@ impl XdpProgram {
 
         match unsafe { poll_logs(self.handle, &mut ip_event as *mut BlockedIpEvent, ms.into()) } {
             ret if ret > 0 => Some(ip_event),
-            _ => None,
+            0 => None,
+            err => {dbg!(err); return None} ,
         }
     }
 }
