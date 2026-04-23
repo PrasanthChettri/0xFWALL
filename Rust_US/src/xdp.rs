@@ -3,6 +3,8 @@ use std::os::raw::{c_char, c_int, c_void};
 use std::net::Ipv4Addr;
 use std::sync::Arc ; 
 use std::sync::Mutex ; 
+use std::fmt;
+
 
 #[repr(C)]
 struct RulesFfi {
@@ -23,6 +25,22 @@ pub struct BlockedIpEvent {
     pub dst_port:     u16,
     pub protocol:     u8,
     pub reason:       u8,
+}
+
+impl fmt::Display for BlockedIpEvent {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "ID: {:<5} | SRC: {:<15}:{:>5} | DST: {:<15}:{:>5} | PROTO: {:>3} | REASON: {}",
+            self.id,
+            self.src_ip,
+            self.src_port,
+            self.dst_ip,
+            self.dst_port,
+            self.protocol,
+            self.reason
+        )
+    }
 }
 
 impl BlockedIpEvent {
@@ -83,8 +101,6 @@ impl XdpProgram {
             port_list:  port_list.as_ptr(),
             port_count: port_list.len() as c_int,
         };
-
-        dbg!(ipv4_list.first());
 
         match unsafe { load_rules(&rule_table as *const RulesFfi) } {
             0       => Ok(()),
