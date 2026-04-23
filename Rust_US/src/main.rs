@@ -22,35 +22,42 @@ async fn main() {
         }
     };
 
+    let log_writer = LogWriter::spawn(&config.log_path, 1024);
+
     let is_main_loop_running = Arc::new(AtomicBool::new(true)) ; 
     let r = is_main_loop_running.clone() ; 
     tokio::spawn(
         async move {
             signal::ctrl_c().await.expect("Failed to listen to kill signal") ; 
-            println!("Stopping service") ;
+            log_writer.try_write("Stopping service") ;
             r.store(false, Ordering::SeqCst) ; 
         }
     ) ; 
 
     let rules = match  Rules::load_from_file(&config.rules_path) {
         Ok(rules) => rules ,
-        Err(_) => panic!("F"), 
+        Err(_) => {
+            log_writer.try_write("Stopping service") ;
+            panic!("failed to load rules, exiting"); 
+        }
     } ;
 
     let _handler: Arc<Mutex<XdpProgram>> = match XdpProgram::attach(&config.kernel_path, &config.interface) {
         Ok(xdp) => xdp,
         Err(err) => {
-            eprintln!("attach failed: {err}");
-            return;
+            log_writer.try_write("attach failed: {err}");
+            panic!("Failed to attach XDP program, exiting"); 
         }
     };
     
     match _handler.clone().lock().unwrap().load_rules(&rules.blocked_ipv4, &rules.blocked_ports) {
-        Ok(_) => print!("YAY") , 
-        Err(val) => print!("NAY{val}") 
+        Ok(_) => log_writer.try_write("loaded rules") ;
+        Err(val) => {
+            log_writer.try_write("failed to load rules");
+            panic!("Failed to load rules, exiting") ; 
+        }
     }
 
-    let log_writer = LogWriter::spawn(&config.log_path, 1024);
     let r_read = is_main_loop_running.clone() ; 
     let handler_clone = _handler.clone() ; 
     let poll_task = tokio::spawn(async move {

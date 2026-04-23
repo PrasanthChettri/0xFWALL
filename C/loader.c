@@ -150,7 +150,6 @@ int load_rules(const struct rule_table* rt) {
     if (!bm->rule_map_fd || !rt->ipv4_list || !bm->prog_fd) {
         return -1 ;
     }
-    printf("\n%p\n%u\n", rt->ipv4_list, *(rt->ipv4_list)) ;
     struct rule_value value = {
         .action = RULE_ACTION_DROP,
     };
