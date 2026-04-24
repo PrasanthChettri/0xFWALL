@@ -40,9 +40,9 @@ static __always_inline int check_ip_blocklist(__u32 saddr) {
 }
 
 static __always_inline int extract_and_check_port_blocklist(struct iphdr *ip, void* data_end) {
+    bpf_printk("checking port"); 
     struct tcphdr *tcp ; 
     struct udphdr *udp ; 
-    bpf_printk("checking port"); 
     if (ip->protocol == IPPROTO_TCP) {
         tcp = (struct tcphdr *)(ip + 1) ; // TODO: ACCOUNT FOR VARIABLE IP HDR LENGTH, THIS IS ACTUALLY WRONG
         if((void *)(tcp + 1) > data_end) {

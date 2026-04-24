@@ -154,6 +154,7 @@ int poll_logs(void * bpf_md, struct blocked_ip_event *bie,  int ms) {
 
 int load_rules(const struct rule_table* rt) {
     if (!bm->ip_rule_map_fd || !rt->ipv4_list || !rt->port_list || !bm->prog_fd) {
+        printf("EEE") ; 
         return -1 ;
     }
     struct rule_value value = {
@@ -164,6 +165,7 @@ int load_rules(const struct rule_table* rt) {
             .addr = rt->ipv4_list[i],
         };
         int err = bpf_map_update_elem(bm->ip_rule_map_fd, &key, &value, BPF_ANY) ; 
+        printf("FFF") ; 
         if (err != 0 ) {
             return err ; 
         }
@@ -176,6 +178,7 @@ int load_rules(const struct rule_table* rt) {
         if (err != 0 ) {
             return err ; 
         }
+        printf("GGGG") ; 
     }
     return 0 ;
 }

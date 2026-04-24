@@ -1,12 +1,8 @@
+[INFO] failed to load rules
 [INFO] Stopping service
-[INFO] loaded rules
-[EVENT] ID: 1     | SRC: 503425216      :    0 | DST: 167880896      :    0 | PROTO:   1 | REASON: 1
-[EVENT] ID: 2     | SRC: 503425216      :    0 | DST: 167880896      :    0 | PROTO:   1 | REASON: 1
-[EVENT] ID: 3     | SRC: 503425216      :    0 | DST: 167880896      :    0 | PROTO:   6 | REASON: 1
-[EVENT] ID: 4     | SRC: 503425216      :    0 | DST: 167880896      :    0 | PROTO:   6 | REASON: 1
-[EVENT] ID: 5     | SRC: 503425216      :    0 | DST: 167880896      :    0 | PROTO:   6 | REASON: 1
+[INFO] failed to load rules
 [INFO] Stopping service
+[INFO] failed to load rules
 [INFO] Stopping service
-[INFO] Stopping service
-[INFO] Stopping service
+[INFO] failed to load rules
 [INFO] Stopping service

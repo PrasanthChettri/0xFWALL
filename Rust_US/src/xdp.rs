@@ -99,8 +99,8 @@ impl XdpProgram {
         let rule_table = RulesFfi {
             ipv4_list:  ipv4.as_ptr(),
             ipv4_count: ipv4.len() as c_int,
-            port_list:  port_list.as_ptr(),
-            port_count: port_list.len() as c_int,
+            port_list:  port.as_ptr(),
+            port_count: port.len() as c_int,
         };
 
         match unsafe { load_rules(&rule_table as *const RulesFfi) } {
