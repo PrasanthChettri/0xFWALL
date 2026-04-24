@@ -33,7 +33,7 @@ async fn main() {
     let ctrl_c_tx = log_tx.clone(); 
     tokio::spawn(async move {
         signal::ctrl_c().await.expect("Failed to listen to kill signal");
-        ctrl_c_tx.write(String::from("Stopping service"));
+        ctrl_c_tx.write(String::from("Stopping service")).await;
         r.store(false, Ordering::SeqCst);
         // ctrl_c_tx is safely dropped here when this task ends.
     });
@@ -58,10 +58,10 @@ async fn main() {
         }
     };
     
-    match _handler.lock().unwrap().load_rules(&rules.blocked_ipv4, &rules.blocked_ports) {
-        Ok(_) => log_tx.write(String::from("loaded rules")), 
+    match _handler.lock().unwrap().load_rules_ingress(&rules.blocked_ipv4, &rules.blocked_ports) {
+        Ok(_) => log_tx.write(String::from("loaded rules")).await, 
         Err(_) => {
-            log_tx.write(String::from("failed to load rules"));
+            log_tx.write(String::from("failed to load rules")).await;
             drop(log_tx);
             let _ = log_worker.shutdown().await;
             return; 

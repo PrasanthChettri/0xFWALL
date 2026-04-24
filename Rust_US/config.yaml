@@ -1,4 +1,4 @@
 kernel_path: "../C/target/kernel.o"
 rules_path: "rules.json"
 log_path: "blocked.log"
-interface: "lo"
+interface: "ens33"

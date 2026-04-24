@@ -93,8 +93,9 @@ impl XdpProgram {
         )
     }
 
-    pub fn load_rules(&self, ipv4_list: &[Ipv4Addr], port_list: &[u16]) -> Result<(), i32> {
+    pub fn load_rules_ingress(&self, ipv4_list: &[Ipv4Addr], port_list: &[u16]) -> Result<(), i32> {
         let ipv4: Vec<u32> = ipv4_list.iter().copied().map(|x| u32::from(x).to_be()).collect();
+        let port: Vec<u16> = port_list.iter().copied().map(|x| u16::from(x).to_be()).collect();
         let rule_table = RulesFfi {
             ipv4_list:  ipv4.as_ptr(),
             ipv4_count: ipv4.len() as c_int,
