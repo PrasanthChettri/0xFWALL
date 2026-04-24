@@ -85,7 +85,7 @@ int load_xdp(const char *obj_path, const char *ifname)
     
     bm->ip_rule_map_fd = bpf_map__fd(ip_rule_map);
     bm->ip_log_map_fd = bpf_map__fd(log_map);
-    bm->port_rule_map_fd = bpf_map__fd(log_map);
+    bm->port_rule_map_fd = bpf_map__fd(port_rule_map);
     bm->ip_log_rb = ring_buffer__new(bm->ip_log_map_fd , handle_ip_log_rb, bm, NULL);
     if (bm->port_rule_map_fd < 0 || bm->ip_rule_map_fd < 0 || bm->ip_log_map_fd < 0) {
         err = -1;
@@ -171,11 +171,13 @@ int load_rules(const struct rule_table* rt) {
         }
     }
     for(int i = 0 ; i < rt->port_count ; i++) {
-        struct port_rule_key key = {
+        struct port_rule_key p_key = {
             .port = rt->port_list[i],
         };
-        int err = bpf_map_update_elem(bm->port_rule_map_fd, &key, &value, BPF_ANY) ; 
-        if (err != 0 ) {
+        printf("\n\n%d\n\n", rt->port_list[i]);
+        int err = bpf_map_update_elem(bm->port_rule_map_fd, &p_key, &value, BPF_ANY) ; 
+        printf("\n%d\n", err) ; 
+        if (err != 0) {
             return err ; 
         }
         printf("GGGG") ; 
