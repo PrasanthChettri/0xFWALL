@@ -25,18 +25,26 @@ pub struct Event {
     pub dst_port:     u16,
     pub protocol:     u8,
     pub reason:       u8,
+    pub event_type:   u8,
+    _pad:             u8,
 }
 
 impl fmt::Display for Event {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let src_ip = Ipv4Addr::from(u32::from_be(self.src_ip));
+        let dst_ip = Ipv4Addr::from(u32::from_be(self.dst_ip));
+        let src_port = u16::from_be(self.src_port);
+        let dst_port = u16::from_be(self.dst_port);
+
         write!(
             f,
-            "ID: {:<5} | SRC: {:<15}:{:>5} | DST: {:<15}:{:>5} | PROTO: {:>3} | REASON: {}",
+            "ID: {:<5} | TYPE: {:<2} | SRC: {:<15}:{:>5} | DST: {:<15}:{:>5} | PROTO: {:>3} | REASON: {}",
             self.id,
-            self.src_ip,
-            self.src_port,
-            self.dst_ip,
-            self.dst_port,
+            self.event_type,
+            src_ip,
+            src_port,
+            dst_ip,
+            dst_port,
             self.protocol,
             self.reason
         )

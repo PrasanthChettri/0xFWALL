@@ -95,6 +95,7 @@ int xdp_prog(struct xdp_md *ctx)
         event->dst_port = 0;
         event->protocol = ip->protocol;
         event->reason = BLOCK_REASON_SRC_IPV4;
+        event->event_type = INGRESS_BLOCKED_EVENT;
         bpf_ringbuf_submit(event, 0);
         return XDP_DROP;
     }

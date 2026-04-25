@@ -13,6 +13,7 @@
 #define RULE_ACTION_DROP 1
 #define BLOCK_REASON_SRC_IPV4 1
 #define BLOCK_REASON_SRC_PORT 2
+#define INGRESS_BLOCKED_EVENT 1
 
 struct rule_table {
     const __u32 *ipv4_list;
@@ -42,6 +43,8 @@ struct event {
     __u16 dst_port;
     __u8 protocol;
     __u8 reason;
+    __u8 event_type;
+    __u8 _pad;
 };
 
 #endif
