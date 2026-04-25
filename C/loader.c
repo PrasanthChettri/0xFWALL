@@ -14,8 +14,7 @@ struct bpf_metadata {
     struct bpf_program *prog;
     int prog_fd, ifindex, ip_rule_map_fd, port_rule_map_fd, ip_log_map_fd;
     struct ring_buffer *ip_log_rb ; 
-    struct blocked_ip_event *latest_bie ;
-    struct blocked_port_event *latest_bpe ;
+    struct event *latest_event ;
     pthread_mutex_t ip_log_rb_lock;
 } ;
 
@@ -29,17 +28,17 @@ struct bpf_metadata* get_bpf_obj(void) {
 void cleanup(void *) ; 
 int handle_ip_log_rb(void *ctx, void *data, size_t len) {
     struct bpf_metadata *bpf_md = (struct bpf_metadata *)ctx;
-    const struct blocked_ip_event *event = (const struct blocked_ip_event *)data;
+    const struct event *event = (const struct event *)data;
 
-    if (!bpf_md || !bpf_md->latest_bie || !data) {
+    if (!bpf_md || !bpf_md->latest_event || !data) {
         return -1;
     }
 
-    if (len != sizeof(struct blocked_ip_event)) {
+    if (len != sizeof(struct event)) {
         return -1;
     }
 
-    memcpy(bpf_md->latest_bie, event, sizeof(*event));
+    memcpy(bpf_md->latest_event, event, sizeof(*event));
     return 0;
 }
 
@@ -127,7 +126,7 @@ void cleanup(void * bpf_md) {
         ring_buffer__free(bpf_md_s->ip_log_rb);
         bpf_md_s->ip_log_rb = NULL;
     }
-    bpf_md_s->latest_bie = NULL;
+    bpf_md_s->latest_event = NULL;
     pthread_mutex_unlock(&bpf_md_s->ip_log_rb_lock);
     pthread_mutex_destroy(&bpf_md_s->ip_log_rb_lock);
     bpf_xdp_detach(bpf_md_s->ifindex, XDP_FLAGS_UPDATE_IF_NOEXIST, NULL);
@@ -135,18 +134,18 @@ void cleanup(void * bpf_md) {
     free(bpf_md_s) ; 
 }
 
-int poll_logs(void * bpf_md, struct blocked_ip_event *bie,  int ms) {
+int poll_logs(void * bpf_md, struct event *event,  int ms) {
     struct bpf_metadata *bpf_md_s = (struct bpf_metadata *) bpf_md ; 
     int err;
 
-    if (!bpf_md_s || !bie || !bpf_md_s->ip_log_rb) {
+    if (!bpf_md_s || !event || !bpf_md_s->ip_log_rb) {
         return -1;
     }
 
     pthread_mutex_lock(&bpf_md_s->ip_log_rb_lock);
-    bpf_md_s->latest_bie = bie;
+    bpf_md_s->latest_event = event;
     err = ring_buffer__poll(bpf_md_s->ip_log_rb, ms);
-    bpf_md_s->latest_bie = NULL;
+    bpf_md_s->latest_event = NULL;
     pthread_mutex_unlock(&bpf_md_s->ip_log_rb_lock);
     return err ; 
 }

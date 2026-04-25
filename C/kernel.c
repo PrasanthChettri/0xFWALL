@@ -64,7 +64,7 @@ int _id ;
 SEC("xdp")
 int xdp_prog(struct xdp_md *ctx)
 {
-    struct blocked_ip_event *event;
+    struct event *event;
     void *data = (void *)(long)ctx->data;
     void *data_end = (void *)(long)ctx->data_end;
     struct ethhdr *eth = data;

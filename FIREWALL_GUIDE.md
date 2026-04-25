@@ -16,7 +16,7 @@ use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
 use chrono::Local;
 
-use crate::xdp::BlockedIpEvent;
+use crate::xdp::Event;
 
 #[derive(Debug, Clone, Copy)]
 pub enum LogLevel {
@@ -26,7 +26,7 @@ pub enum LogLevel {
 /// The LogEntry enum allows the logger to handle both structured 
 /// packet data and general status messages.
 pub enum LogEntry {
-    Event(BlockedIpEvent),
+    Event(Event),
     Message(LogLevel, String),
 }
 
@@ -47,7 +47,7 @@ impl LogWriter {
             while let Some(entry) = receiver.recv().await {
                 let now = Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
                 let output = match entry {
-                    // Uses the Display trait from BlockedIpEvent
+                    // Uses the Display trait from Event
                     LogEntry::Event(ev) => format!("[{}][EVENT] {}\n", now, ev),
                     LogEntry::Message(level, msg) => {
                         let lbl = match level {
@@ -78,7 +78,7 @@ impl LogWriter {
         let _ = self.sender.try_send(LogEntry::Message(level, msg.into()));
     }
 
-    pub fn event_nblocking(&self, ev: BlockedIpEvent) {
+    pub fn event_nblocking(&self, ev: Event) {
         let _ = self.sender.try_send(LogEntry::Event(ev));
     }
 

@@ -6,7 +6,7 @@ use tokio::io::{AsyncWriteExt, BufWriter};
 use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
 
-use crate::xdp::BlockedIpEvent;
+use crate::xdp::Event;
 
 enum LogLevel {
     Debug,
@@ -16,7 +16,7 @@ enum LogLevel {
 }
 
 pub enum LogEntry {
-    Event(BlockedIpEvent),
+    Event(Event),
     Msg(String, LogLevel),
 }
 
@@ -24,7 +24,7 @@ pub trait LogWritable: fmt::Display + Send {
     fn to_log_entry(self) -> LogEntry;
 }
 
-impl LogWritable for BlockedIpEvent {
+impl LogWritable for Event {
     fn to_log_entry(self) -> LogEntry {
         LogEntry::Event(self)
     }

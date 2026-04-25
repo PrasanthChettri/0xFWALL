@@ -16,7 +16,7 @@ struct RulesFfi {
 
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
-pub struct BlockedIpEvent {
+pub struct Event {
     pub id:           u64,
     pub timestamp_ns: u64,
     pub src_ip:       u32,
@@ -27,7 +27,7 @@ pub struct BlockedIpEvent {
     pub reason:       u8,
 }
 
-impl fmt::Display for BlockedIpEvent {
+impl fmt::Display for Event {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
@@ -43,7 +43,7 @@ impl fmt::Display for BlockedIpEvent {
     }
 }
 
-impl BlockedIpEvent {
+impl Event {
     /// Return a zeroed-out value suitable for use as a C output buffer.
     pub fn new() -> Self {
         // SAFETY: every bit-pattern is valid for a repr(C) struct of
@@ -57,7 +57,7 @@ unsafe extern "C" {
     fn get_bpf_obj() -> *mut c_void;
     fn cleanup(bpf_md: *mut c_void);
     fn load_rules(rule_table: *const RulesFfi) -> c_int;
-    fn poll_logs(bpf_md: *mut c_void, ip_event_ptr: *mut BlockedIpEvent, ms: c_int) -> c_int;
+    fn poll_logs(bpf_md: *mut c_void, event_ptr: *mut Event, ms: c_int) -> c_int;
 }
 
 pub struct XdpProgram {
@@ -109,11 +109,11 @@ impl XdpProgram {
         }
     }
 
-    pub fn poll_logs(&self, ms: u16) -> Option<BlockedIpEvent> {
-        let mut ip_event = BlockedIpEvent::new();
+    pub fn poll_logs(&self, ms: u16) -> Option<Event> {
+        let mut event = Event::new();
 
-        match unsafe { poll_logs(self.handle, &mut ip_event as *mut BlockedIpEvent, ms.into()) } {
-            ret if ret > 0 => Some(ip_event),
+        match unsafe { poll_logs(self.handle, &mut event as *mut Event, ms.into()) } {
+            ret if ret > 0 => Some(event),
             0 => None,
             err => {dbg!(err); return None} ,
         }
