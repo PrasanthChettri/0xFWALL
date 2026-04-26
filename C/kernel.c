@@ -1,5 +1,6 @@
 #include <linux/bpf.h>
 #include <linux/tcp.h>
+#include <linux/udp.h>
 #include <linux/if_ether.h>
 #include <linux/ip.h>
 #include <bpf/bpf_helpers.h>
@@ -7,11 +8,21 @@
 #include "shared.h"
 
 struct {
+    __uint(type, BPF_MAP_TYPE_LPM_TRIE);
+    __uint(max_entries, MAX_BLOCKED_IPV4);
+    __type(key, struct ipv4_rule_key);
+    __type(value, __u8);
+    __uint(map_flags, BPF_F_NO_PREALLOC);
+} ipv4_rule_table SEC(".maps");
+
+/*
+struct {
     __uint(type, BPF_MAP_TYPE_HASH);
     __uint(max_entries, MAX_BLOCKED_IPV4);
     __type(key, struct ipv4_rule_key);
     __type(value, struct rule_value);
 } ipv4_rule_table SEC(".maps");
+*/
 
 struct {
     __uint(type, BPF_MAP_TYPE_HASH);
@@ -23,13 +34,8 @@ struct {
 
 struct {
     __uint(type, BPF_MAP_TYPE_RINGBUF);
-    __uint(max_entries, 1 << 20); // 1 MiB
-} blocked_ip_events  SEC(".maps");
-
-struct {
-    __uint(type, BPF_MAP_TYPE_RINGBUF);
-    __uint(max_entries, 1 << 20); // 1 MiB
-} blocked_port_events  SEC(".maps");
+    __uint(max_entries, 8 * 1024 * 1024); // 8 MiB
+} events SEC(".maps");
 
 static __always_inline int check_ip_blocklist(__u32 saddr) {
     struct ipv4_rule_key src_key = { .addr = saddr };
@@ -40,26 +46,29 @@ static __always_inline int check_ip_blocklist(__u32 saddr) {
 }
 
 static __always_inline int extract_and_check_port_blocklist(struct iphdr *ip, void* data_end) {
-    bpf_printk("checking port"); 
-    struct tcphdr *tcp ; 
-    struct udphdr *udp ; 
+    void *l4_start = (void *)ip + (ip->ihl * 4);
+    __u16 dport = 0;
+    __u16 sport = 0;
+
     if (ip->protocol == IPPROTO_TCP) {
-        tcp = (struct tcphdr *)(ip + 1) ; // TODO: ACCOUNT FOR VARIABLE IP HDR LENGTH, THIS IS ACTUALLY WRONG
-        if((void *)(tcp + 1) > data_end) {
-            return -1; 
-        }
-        __u16 i_port = tcp->dest ; 
-        if(!i_port)
-            return -1 ; 
-        bpf_printk("port is %d", i_port); 
-        struct port_rule_key key = { .port = i_port } ; 
-        struct rule_value *src_rule = bpf_map_lookup_elem(&port_rule_table, &key);
-        if (src_rule && src_rule->action == RULE_ACTION_DROP)
-            return 1;
+        struct tcphdr *tcp = l4_start;
+        if ((void *)(tcp + 1) > data_end) return 0;
+        dport = tcp->dest;
+        sport = tcp->source;
+    } else if (ip->protocol == IPPROTO_UDP) {
+        struct udphdr *udp = l4_start;
+        if ((void *)(udp + 1) > data_end) return 0;
+        dport = udp->dest;
+        sport = udp->source;
+    } else {
         return 0;
     }
-    return 0 ; 
+
+    struct port_rule_key key = { .port = dport };
+    struct rule_value *rule = bpf_map_lookup_elem(&port_rule_table, &key);
+    return  (int) (rule && rule->action == RULE_ACTION_DROP) ; 
 }
+
 int _id ; 
 SEC("xdp")
 int xdp_prog(struct xdp_md *ctx)
@@ -80,30 +89,24 @@ int xdp_prog(struct xdp_md *ctx)
     if ((void *)(ip + 1) > data_end)
         return XDP_PASS;
 
-
-
-    if ( check_ip_blocklist(ip->saddr) == 1) {
-        event = bpf_ringbuf_reserve(&blocked_ip_events, sizeof(*event), 0);
-        if (!event) {
-            return XDP_DROP;
+    __u8 is_ip_blocked = check_ip_blocklist(ip->saddr) ; 
+    __u8 is_port_blocked = extract_and_check_port_blocklist(ip, data_end) ; 
+    if(is_ip_blocked | is_port_blocked){
+        event = bpf_ringbuf_reserve(&events, sizeof(*event), 0);
+        if (event) {
+            event->id = ++_id ; 
+            event->timestamp_ns = bpf_ktime_get_ns();
+            event->src_ip = ip->saddr;
+            event->dst_ip = ip->daddr;
+            event->src_port = 0;
+            event->dst_port = 0;
+            event->protocol = ip->protocol;
+            event->reason = is_ip_blocked ? BLOCK_REASON_SRC_IPV4 : BLOCK_REASON_SRC_PORT;
+            event->event_type = INGRESS_BLOCKED_EVENT;
+            bpf_ringbuf_submit(event, 0);
         }
-        event->id = ++_id ; 
-        event->timestamp_ns = bpf_ktime_get_ns();
-        event->src_ip = ip->saddr;
-        event->dst_ip = ip->daddr;
-        event->src_port = 0;
-        event->dst_port = 0;
-        event->protocol = ip->protocol;
-        event->reason = BLOCK_REASON_SRC_IPV4;
-        event->event_type = INGRESS_BLOCKED_EVENT;
-        bpf_ringbuf_submit(event, 0);
         return XDP_DROP;
     }
-    if ( extract_and_check_port_blocklist(ip, data_end) == 1) {
-        return XDP_DROP ; 
-    }
-    return XDP_PASS ; 
-
+    return XDP_PASS;
 }
-
 char LICENSE[] SEC("license") = "GPL";

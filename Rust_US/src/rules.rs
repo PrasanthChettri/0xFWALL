@@ -1,10 +1,10 @@
 use std::fs;
 use serde::Deserialize;
-use std::net::Ipv4Addr ;
+use ipnet::Ipv4Net;
 
 #[derive(Deserialize, Debug)]
 pub struct Rules {
-    pub blocked_ipv4: Vec<Ipv4Addr> ,
+    pub blocked_ipv4: Vec<Ipv4Net>,
     pub blocked_ports: Vec<u16>
 }
 

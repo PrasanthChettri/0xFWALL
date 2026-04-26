@@ -1,6 +1,7 @@
 use std::ffi::CString;
 use std::os::raw::{c_char, c_int, c_void};
 use std::net::Ipv4Addr;
+use ipnet::Ipv4Net;
 use std::sync::Arc ; 
 use std::sync::Mutex ; 
 use std::fmt;
@@ -9,6 +10,7 @@ use std::fmt;
 #[repr(C)]
 struct RulesFfi {
     ipv4_list:  *const u32,
+    ipv4_prefix_len:  *const u32,
     ipv4_count: c_int,
     port_list:  *const u16,
     port_count: c_int,
@@ -36,6 +38,12 @@ impl fmt::Display for Event {
         let src_port = u16::from_be(self.src_port);
         let dst_port = u16::from_be(self.dst_port);
 
+        let reason_str = match self.reason {
+            1 => "IP_BLOCK",
+            2 => "PORT_BLOCK",
+            _ => "UNKNOWN",
+        };
+
         write!(
             f,
             "ID: {:<5} | TYPE: {:<2} | SRC: {:<15}:{:>5} | DST: {:<15}:{:>5} | PROTO: {:>3} | REASON: {}",
@@ -46,7 +54,7 @@ impl fmt::Display for Event {
             dst_ip,
             dst_port,
             self.protocol,
-            self.reason
+            reason_str
         )
     }
 }
@@ -101,11 +109,13 @@ impl XdpProgram {
         )
     }
 
-    pub fn load_rules_ingress(&self, ipv4_list: &[Ipv4Addr], port_list: &[u16]) -> Result<(), i32> {
-        let ipv4: Vec<u32> = ipv4_list.iter().copied().map(|x| u32::from(x).to_be()).collect();
-        let port: Vec<u16> = port_list.iter().copied().map(|x| u16::from(x).to_be()).collect();
+    pub fn load_rules_ingress(&self, ipv4_list: &[Ipv4Net], port_list: &[u16]) -> Result<(), i32> {
+        let ipv4: Vec<u32> = ipv4_list.iter().map(|x| u32::from(x.addr()).to_be()).collect();
+        let ipv4_prefix: Vec<u32> = ipv4_list.iter().map(|x| x.prefix_len() as u32).collect();
+        let port: Vec<u16> = port_list.iter().map(|x| u16::from(*x).to_be()).collect();
         let rule_table = RulesFfi {
             ipv4_list:  ipv4.as_ptr(),
+            ipv4_prefix_len: ipv4_prefix.as_ptr(),
             ipv4_count: ipv4.len() as c_int,
             port_list:  port.as_ptr(),
             port_count: port.len() as c_int,

@@ -12,10 +12,10 @@
 struct bpf_metadata {
     struct bpf_object *obj;
     struct bpf_program *prog;
-    int prog_fd, ifindex, ip_rule_map_fd, port_rule_map_fd, ip_log_map_fd;
-    struct ring_buffer *ip_log_rb ; 
+    int prog_fd, ifindex, ip_rule_map_fd, port_rule_map_fd, log_map_fd;
+    struct ring_buffer *log_rb ; 
     struct event *latest_event ;
-    pthread_mutex_t ip_log_rb_lock;
+    pthread_mutex_t log_rb_lock;
 } ;
 
 struct bpf_metadata *bm ; 
@@ -26,7 +26,7 @@ struct bpf_metadata* get_bpf_obj(void) {
 }
 
 void cleanup(void *) ; 
-int handle_ip_log_rb(void *ctx, void *data, size_t len) {
+int handle_log_rb(void *ctx, void *data, size_t len) {
     struct bpf_metadata *bpf_md = (struct bpf_metadata *)ctx;
     const struct event *event = (const struct event *)data;
 
@@ -52,7 +52,7 @@ int load_xdp(const char *obj_path, const char *ifname)
         return -1;
     }
     memset(bm, 0, sizeof(*bm));
-    err = pthread_mutex_init(&bm->ip_log_rb_lock, NULL);
+    err = pthread_mutex_init(&bm->log_rb_lock, NULL);
     if (err != 0) {
         free(bm);
         bm = NULL;
@@ -75,7 +75,7 @@ int load_xdp(const char *obj_path, const char *ifname)
     // PORT RULE MAP INGRESS
     port_rule_map = bpf_object__find_map_by_name(bm->obj, PORT_RULE_MAP_ALIAS);
     // LOG MAP
-    log_map = bpf_object__find_map_by_name(bm->obj, IP_LOG_MAP_ALIAS);
+    log_map = bpf_object__find_map_by_name(bm->obj, EVENT_LOG_MAP_ALIAS);
     if (!ip_rule_map || !log_map || !port_rule_map) {
         err = -1;
         cleanup((void *)bm);
@@ -83,10 +83,10 @@ int load_xdp(const char *obj_path, const char *ifname)
     }
     
     bm->ip_rule_map_fd = bpf_map__fd(ip_rule_map);
-    bm->ip_log_map_fd = bpf_map__fd(log_map);
+    bm->log_map_fd = bpf_map__fd(log_map);
     bm->port_rule_map_fd = bpf_map__fd(port_rule_map);
-    bm->ip_log_rb = ring_buffer__new(bm->ip_log_map_fd , handle_ip_log_rb, bm, NULL);
-    if (bm->port_rule_map_fd < 0 || bm->ip_rule_map_fd < 0 || bm->ip_log_map_fd < 0) {
+    bm->log_rb = ring_buffer__new(bm->log_map_fd , handle_log_rb, bm, NULL);
+    if (bm->port_rule_map_fd < 0 || bm->ip_rule_map_fd < 0 || bm->log_map_fd < 0 || !bm->log_rb) {
         err = -1;
         cleanup((void *)bm);
         return err;
@@ -121,14 +121,14 @@ void cleanup(void * bpf_md) {
     if (!bpf_md_s) {
         return;
     }
-    pthread_mutex_lock(&bpf_md_s->ip_log_rb_lock);
-    if (bpf_md_s->ip_log_rb) {
-        ring_buffer__free(bpf_md_s->ip_log_rb);
-        bpf_md_s->ip_log_rb = NULL;
+    pthread_mutex_lock(&bpf_md_s->log_rb_lock);
+    if (bpf_md_s->log_rb) {
+        ring_buffer__free(bpf_md_s->log_rb);
+        bpf_md_s->log_rb = NULL;
     }
     bpf_md_s->latest_event = NULL;
-    pthread_mutex_unlock(&bpf_md_s->ip_log_rb_lock);
-    pthread_mutex_destroy(&bpf_md_s->ip_log_rb_lock);
+    pthread_mutex_unlock(&bpf_md_s->log_rb_lock);
+    pthread_mutex_destroy(&bpf_md_s->log_rb_lock);
     bpf_xdp_detach(bpf_md_s->ifindex, XDP_FLAGS_UPDATE_IF_NOEXIST, NULL);
     bpf_object__close(bpf_md_s->obj);
     free(bpf_md_s) ; 
@@ -138,21 +138,21 @@ int poll_logs(void * bpf_md, struct event *event,  int ms) {
     struct bpf_metadata *bpf_md_s = (struct bpf_metadata *) bpf_md ; 
     int err;
 
-    if (!bpf_md_s || !event || !bpf_md_s->ip_log_rb) {
+    if (!bpf_md_s || !event || !bpf_md_s->log_rb) {
         return -1;
     }
 
-    pthread_mutex_lock(&bpf_md_s->ip_log_rb_lock);
+    pthread_mutex_lock(&bpf_md_s->log_rb_lock);
     bpf_md_s->latest_event = event;
-    err = ring_buffer__poll(bpf_md_s->ip_log_rb, ms);
+    err = ring_buffer__poll(bpf_md_s->log_rb, ms);
     bpf_md_s->latest_event = NULL;
-    pthread_mutex_unlock(&bpf_md_s->ip_log_rb_lock);
+    pthread_mutex_unlock(&bpf_md_s->log_rb_lock);
     return err ; 
 }
 
 
 int load_rules(const struct rule_table* rt) {
-    if (!bm->ip_rule_map_fd || !rt->ipv4_list || !rt->port_list || !bm->prog_fd) {
+    if (!bm->ip_rule_map_fd || !rt->ipv4_list || !rt->ipv4_prefix_len || !rt->port_list || !bm->prog_fd) {
         printf("EEE") ; 
         return -1 ;
     }
@@ -161,6 +161,7 @@ int load_rules(const struct rule_table* rt) {
     };
     for(int i = 0 ; i < rt->ipv4_count ; i++) {
         struct ipv4_rule_key key = {
+            .prefixlen = rt->ipv4_prefix_len[i],
             .addr = rt->ipv4_list[i],
         };
         int err = bpf_map_update_elem(bm->ip_rule_map_fd, &key, &value, BPF_ANY) ; 

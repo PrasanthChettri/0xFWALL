@@ -5,8 +5,7 @@
 
 #define IPV4_RULE_MAP_ALIAS "ipv4_rule_table"
 #define PORT_RULE_MAP_ALIAS "port_rule_table"
-#define IP_LOG_MAP_ALIAS "blocked_ip_events"
-#define PORT_LOG_MAP_ALIAS "blocked_port_events"
+#define EVENT_LOG_MAP_ALIAS "events"
 #define PROG_NAME "xdp_prog"
 #define MAX_BLOCKED_IPV4 1024
 #define MAX_BLOCKED_PORT 1024
@@ -17,14 +16,21 @@
 
 struct rule_table {
     const __u32 *ipv4_list;
+    const __u32 *ipv4_prefix_len;
     int ipv4_count;
     const __u16 *port_list;
     int port_count;
 };
 
 struct ipv4_rule_key {
+    __u32 prefixlen;
     __u32 addr;
 };
+
+/*
+struct ipv4_rule_key {
+    __u32 addr;
+};*/
 
 struct rule_value {
     __u8 action;
