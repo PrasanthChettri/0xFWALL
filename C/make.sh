@@ -3,7 +3,12 @@ mkdir -p ./target
 
 clang -O2 -g -target bpf \
   -I/usr/include/$(uname -m)-linux-gnu \
-  -c kernel.c -o ./target/kernel.o
+  -c epbf_xdp_ingress.c -o ./target/epbf_xdp_ingress.o
+
+clang -O2 -g -target bpf \
+  -I/usr/include/$(uname -m)-linux-gnu \
+  -c epbf_tc_egress.c -o ./target/epbf_tc_egress.o
+
 clang -O2 -g -c loader.c -o loader.o
 ar rcs ./target/libloader.a loader.o
 rm loader.o

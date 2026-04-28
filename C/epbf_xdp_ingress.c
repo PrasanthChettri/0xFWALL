@@ -6,6 +6,7 @@
 #include <bpf/bpf_helpers.h>
 #include <linux/in.h>
 #include "shared.h"
+#include "shared_krings.h"
 
 struct {
     __uint(type, BPF_MAP_TYPE_LPM_TRIE);
@@ -15,14 +16,6 @@ struct {
     __uint(map_flags, BPF_F_NO_PREALLOC);
 } ipv4_rule_table SEC(".maps");
 
-/*
-struct {
-    __uint(type, BPF_MAP_TYPE_HASH);
-    __uint(max_entries, MAX_BLOCKED_IPV4);
-    __type(key, struct ipv4_rule_key);
-    __type(value, struct rule_value);
-} ipv4_rule_table SEC(".maps");
-*/
 
 struct {
     __uint(type, BPF_MAP_TYPE_HASH);
@@ -32,10 +25,6 @@ struct {
 } port_rule_table SEC(".maps");
 
 
-struct {
-    __uint(type, BPF_MAP_TYPE_RINGBUF);
-    __uint(max_entries, 8 * 1024 * 1024); // 8 MiB
-} events SEC(".maps");
 
 static __always_inline int check_ip_blocklist(__u32 saddr) {
     struct ipv4_rule_key src_key = { .addr = saddr };

@@ -6,6 +6,7 @@ version = 4
 name = "Rust_US"
 version = "0.1.0"
 dependencies = [
+ "ipnet",
  "libc",
  "serde",
  "serde_json",
@@ -61,6 +62,15 @@ checksum = "d466e9454f08e4a911e14806c24e16fba1b4c121d1ea474396f396069cf949d9"
 dependencies = [
  "equivalent",
  "hashbrown",
+]
+
+[[package]]
+name = "ipnet"
+version = "2.12.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d98f6fed1fde3f8c21bc40a1abb88dd75e67924f9cffc3ef95607bad8017f8e2"
+dependencies = [
+ "serde",
 ]
 
 [[package]]

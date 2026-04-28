@@ -5,7 +5,8 @@ use serde::Deserialize;
 
 #[derive(Debug, Deserialize)]
 pub struct AppConfig {
-    pub kernel_path: String,
+    pub epbf_path_ingress: String,
+    pub epbf_path_egress: String,
     pub rules_path: String,
     pub log_path: String,
     pub interface: String,

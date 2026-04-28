@@ -42,6 +42,10 @@ int handle_log_rb(void *ctx, void *data, size_t len) {
     return 0;
 }
 
+int load_tc(const char* obj_path, const char*ifname){
+    return 0;
+}
+
 
 int load_xdp(const char *obj_path, const char *ifname)
 {

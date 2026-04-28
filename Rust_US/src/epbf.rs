@@ -70,20 +70,21 @@ impl Event {
 
 unsafe extern "C" {
     fn load_xdp(path: *const c_char, ifname: *const c_char) -> u32;
+    fn load_tc(path: *const c_char, ifname: *const c_char) -> u32;
     fn get_bpf_obj() -> *mut c_void;
     fn cleanup(bpf_md: *mut c_void);
     fn load_rules(rule_table: *const RulesFfi) -> c_int;
     fn poll_logs(bpf_md: *mut c_void, event_ptr: *mut Event, ms: c_int) -> c_int;
 }
 
-pub struct XdpProgram {
+pub struct EPBFProgram {
     handle: *mut c_void,
 }
 
-unsafe impl Send for XdpProgram {}
-unsafe impl Sync for XdpProgram {}
+unsafe impl Send for EPBFProgram {}
+unsafe impl Sync for EPBFProgram {}
 
-impl Drop for XdpProgram {
+impl Drop for EPBFProgram {
     fn drop(&mut self) {
         if !self.handle.is_null() {
             unsafe { cleanup(self.handle) }
@@ -91,16 +92,22 @@ impl Drop for XdpProgram {
     }
 }
 
-impl XdpProgram {
-    pub fn attach(obj_path: &str, ifname: &str) -> Result<Arc<Mutex<Self>>, i32> {
-        let c_path   = CString::new(obj_path).map_err(|_| -1_i32)?;
+impl EPBFProgram {
+    pub fn attach(ingress_obj_path: &str, engress_obj_path: &str, ifname: &str) -> Result<Arc<Mutex<Self>>, i32> {
+        let iop_cpath   = CString::new(ingress_obj_path).map_err(|_| -1_i32)?;
+        let eop_cpath   = CString::new(engress_obj_path).map_err(|_| -1_i32)?;
         let c_ifname = CString::new(ifname).map_err(|_| -1_i32)?;
 
-        let err = unsafe { load_xdp(c_path.as_ptr(), c_ifname.as_ptr()) };
-        if err != 0 {
+        let err_xdp = unsafe { load_xdp(iop_cpath.as_ptr(), c_ifname.as_ptr()) };
+        let err_tc = unsafe { load_tc(eop_cpath.as_ptr(), c_ifname.as_ptr()) };
+
+        if err_xdp != 0 || err_tc !=0 {
+            let err = match err_xdp {
+                0 => err_tc,
+                err_xdp => err_xdp
+            } ;
             return Err(err as i32);
         }
-
         let bpf_obj = unsafe { get_bpf_obj() };
         Ok(
             Arc::new(

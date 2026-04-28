@@ -6,7 +6,7 @@ use tokio::io::{AsyncWriteExt, BufWriter};
 use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
 
-use crate::xdp::Event;
+use crate::epbf::Event;
 
 enum LogLevel {
     Debug,

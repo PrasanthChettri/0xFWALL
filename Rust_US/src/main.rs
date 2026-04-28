@@ -5,9 +5,9 @@ use std::sync::Mutex ;
 use config::AppConfig;
 use log_writer::spawn_logger;
 use tokio::signal ; 
-use xdp::* ; 
+use epbf::* ; 
 mod config ;
-mod xdp ;
+mod epbf ;
 use rules::* ; 
 mod rules ;
 mod log_writer ;
@@ -48,7 +48,9 @@ async fn main() {
         }
     };
 
-    let _handler: Arc<Mutex<XdpProgram>> = match XdpProgram::attach(&config.kernel_path, &config.interface) {
+    let _handler: Arc<Mutex<EPBFProgram>> = match EPBFProgram::attach(
+        &config.epbf_path_ingress, &config.epbf_path_egress, &config.interface
+    ) {
         Ok(xdp) => xdp,
         Err(err) => {
             log_tx.write(format!("attach failed: {err}"));

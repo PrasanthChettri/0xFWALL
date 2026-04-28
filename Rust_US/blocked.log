@@ -107,3 +107,7 @@
 [EVENT] ID: 67    | TYPE: 1  | SRC: 192.168.248.1  :    0 | DST: 192.168.248.129:    0 | PROTO:   6 | REASON: PORT_BLOCK
 [EVENT] ID: 68    | TYPE: 1  | SRC: 192.168.248.1  :    0 | DST: 192.168.248.129:    0 | PROTO:   6 | REASON: PORT_BLOCK
 [EVENT] ID: 69    | TYPE: 1  | SRC: 192.168.248.1  :    0 | DST: 192.168.248.129:    0 | PROTO:   6 | REASON: PORT_BLOCK
+[INFO] Stopping service
+[INFO] Stopping service
+[INFO] Stopping service
+[INFO] Stopping service
