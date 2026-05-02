@@ -11,8 +11,12 @@
 
 struct bpf_metadata {
     struct bpf_object *obj;
+    // rename this to ingress prog and make another egress prog  
     struct bpf_program *prog;
-    int prog_fd, ifindex, ip_rule_map_fd, port_rule_map_fd, log_map_fd;
+    // make two batches of prog_fd, ifindex, ipmaprule, port map rule, suffix it with egress, and ingress
+    int prog_fd, ifindex, ip_rule_map_fd, port_rule_map_fd ; 
+
+    int log_map_fd;
     struct ring_buffer *log_rb ; 
     struct event *latest_event ;
     pthread_mutex_t log_rb_lock;
@@ -43,7 +47,76 @@ int handle_log_rb(void *ctx, void *data, size_t len) {
 }
 
 int load_tc(const char* obj_path, const char*ifname){
-    return 0;
+    int err;
+    struct bpf_map *ip_rule_map, *port_rule_map, *log_map; // Pointer to hold the map object
+    bm = malloc(sizeof(struct bpf_metadata)) ; 
+    if (!bm) {
+        return -1;
+    }
+    memset(bm, 0, sizeof(*bm));
+    err = pthread_mutex_init(&bm->log_rb_lock, NULL);
+    if (err != 0) {
+        free(bm);
+        bm = NULL;
+        return -1;
+    }
+
+    /* ── Step 1: Load ELF object into memory & run verifier ── */
+    bm->obj = bpf_object__open(obj_path);          // parse ELF, resolve BTF
+    if (libbpf_get_error(bm->obj))
+        return -1;
+
+    err = bpf_object__load(bm->obj);               // bpf(BPF_PROG_LOAD) syscall
+    if (err) {                                   // verifier runs here 
+        cleanup((void *)bm) ;
+        return err ;
+    }
+
+    // IP_RULE_MAP INGRESS
+    ip_rule_map = bpf_object__find_map_by_name(bm->obj, IPV4_RULE_MAP_ALIAS);
+    // PORT RULE MAP INGRESS
+    port_rule_map = bpf_object__find_map_by_name(bm->obj, PORT_RULE_MAP_ALIAS);
+    // LOG MAP
+    log_map = bpf_object__find_map_by_name(bm->obj, EVENT_LOG_MAP_ALIAS);
+    if (!ip_rule_map || !log_map || !port_rule_map) {
+        err = -1;
+        cleanup((void *)bm);
+        return err;
+    }
+    
+    bm->ip_rule_map_fd = bpf_map__fd(ip_rule_map);
+    bm->log_map_fd = bpf_map__fd(log_map);
+    bm->port_rule_map_fd = bpf_map__fd(port_rule_map);
+    bm->log_rb = ring_buffer__new(bm->log_map_fd , handle_log_rb, bm, NULL);
+    if (bm->port_rule_map_fd < 0 || bm->ip_rule_map_fd < 0 || bm->log_map_fd < 0 || !bm->log_rb) {
+        err = -1;
+        cleanup((void *)bm);
+        return err;
+    }
+
+    bm->prog = bpf_object__find_program_by_name(bm->obj, PROG_NAME); // or by section
+    if (!bm->prog) {
+        err = -1;
+        cleanup((void *) bm);
+        return err ;
+    }
+    bm->prog_fd = bpf_program__fd(bm->prog);
+
+    bm->ifindex = if_nametoindex(ifname);
+    if (!bm->ifindex) {
+        err = -1;
+        cleanup((void *) bm) ; 
+        return err ; 
+    }
+
+    err = bpf_xdp_attach(bm->ifindex, bm->prog_fd,
+                          XDP_FLAGS_UPDATE_IF_NOEXIST, NULL);
+
+    if (err) {
+        cleanup(bm) ; 
+    }
+    return err ;
+
 }
 
 

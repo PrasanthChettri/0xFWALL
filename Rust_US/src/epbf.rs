@@ -99,13 +99,12 @@ impl EPBFProgram {
         let c_ifname = CString::new(ifname).map_err(|_| -1_i32)?;
 
         let err_xdp = unsafe { load_xdp(iop_cpath.as_ptr(), c_ifname.as_ptr()) };
-        let err_tc = unsafe { load_tc(eop_cpath.as_ptr(), c_ifname.as_ptr()) };
-
-        if err_xdp != 0 || err_tc !=0 {
-            let err = match err_xdp {
-                0 => err_tc,
-                err_xdp => err_xdp
-            } ;
+        let err_tc  = unsafe { load_tc(eop_cpath.as_ptr(), c_ifname.as_ptr()) };
+        let err = match err_xdp {
+            0 => err_tc,
+            err_xdp => err_xdp
+        } ;
+        if err != 0 {
             return Err(err as i32);
         }
         let bpf_obj = unsafe { get_bpf_obj() };
