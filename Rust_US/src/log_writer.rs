@@ -8,7 +8,7 @@ use tokio::task::JoinHandle;
 
 use crate::epbf::Event;
 
-enum LogLevel {
+pub enum LogLevel {
     Debug,
     Warn,
     Error,

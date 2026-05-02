@@ -5,7 +5,7 @@ use ipnet::Ipv4Net;
 use std::sync::Arc ; 
 use std::sync::Mutex ; 
 use std::fmt;
-
+use crate::rules::Rules;
 
 #[repr(C)]
 struct RulesFfi {
@@ -71,10 +71,11 @@ impl Event {
 unsafe extern "C" {
     //fn load_xdp(path: *const c_char, ifname: *const c_char) -> u32;
     //fn load_tc() -> u32;
-    fn load_epbf(tc_path: *const c_char, xdp_path: *const c_char, ifname: *const c_char) -> u32; 
+    fn load_epbf(xdp_path: *const c_char, tc_path: *const c_char, ifname: *const c_char) -> u32; 
     fn get_bpf_obj() -> *mut c_void;
     fn cleanup(bpf_md: *mut c_void);
-    fn load_rules(rule_table: *const RulesFfi) -> c_int;
+    fn load_ingress_rules(rule_table: *const RulesFfi) -> c_int;
+    fn load_egress_rules(rule_table: *const RulesFfi) -> c_int;
     fn poll_logs(bpf_md: *mut c_void, event_ptr: *mut Event, ms: c_int) -> c_int;
 }
 
@@ -94,12 +95,12 @@ impl Drop for EPBFProgram {
 }
 
 impl EPBFProgram {
-    pub fn attach(ingress_obj_path: &str, engress_obj_path: &str, ifname: &str) -> Result<Arc<Mutex<Self>>, i32> {
+    pub fn attach(ingress_obj_path: &str, egress_obj_path: &str, ifname: &str) -> Result<Arc<Mutex<Self>>, i32> {
         let iop_cpath   = CString::new(ingress_obj_path).map_err(|_| -1_i32)?;
-        let eop_cpath   = CString::new(engress_obj_path).map_err(|_| -1_i32)?;
+        let eop_cpath   = CString::new(egress_obj_path).map_err(|_| -1_i32)?;
         let c_ifname = CString::new(ifname).map_err(|_| -1_i32)?;
 
-        let err_epbf = unsafe { load_epbf(eop_cpath.as_ptr(), iop_cpath.as_ptr(), c_ifname.as_ptr()) };
+        let err_epbf = unsafe { load_epbf(iop_cpath.as_ptr(), eop_cpath.as_ptr(), c_ifname.as_ptr()) };
         /*
         let err_xdp = unsafe { load_epbf(iop_cpath.as_ptr(), c_ifname.as_ptr()) };
         let err_tc  = unsafe { load_tc(eop_cpath.as_ptr(), c_ifname.as_ptr()) };
@@ -131,10 +132,34 @@ impl EPBFProgram {
             port_count: port.len() as c_int,
         };
 
-        match unsafe { load_rules(&rule_table as *const RulesFfi) } {
+        match unsafe { load_ingress_rules(&rule_table as *const RulesFfi) } {
             0       => Ok(()),
             ret_val => Err(ret_val as i32),
         }
+    }
+
+    pub fn load_rules_egress(&self, ipv4_list: &[Ipv4Net], port_list: &[u16]) -> Result<(), i32> {
+        let ipv4: Vec<u32> = ipv4_list.iter().map(|x| u32::from(x.addr()).to_be()).collect();
+        let ipv4_prefix: Vec<u32> = ipv4_list.iter().map(|x| x.prefix_len() as u32).collect();
+        let port: Vec<u16> = port_list.iter().map(|x| u16::from(*x).to_be()).collect();
+        let rule_table = RulesFfi {
+            ipv4_list:  ipv4.as_ptr(),
+            ipv4_prefix_len: ipv4_prefix.as_ptr(),
+            ipv4_count: ipv4.len() as c_int,
+            port_list:  port.as_ptr(),
+            port_count: port.len() as c_int,
+        };
+
+        match unsafe { load_egress_rules(&rule_table as *const RulesFfi) } {
+            0       => Ok(()),
+            ret_val => Err(ret_val as i32),
+        }
+    }
+
+    pub fn load_rules(&self, rules: &Rules) -> Result<(), i32> {
+        self.load_rules_ingress(&rules.ingress.blocked_ipv4, &rules.ingress.blocked_ports)?;
+        self.load_rules_egress(&rules.egress.blocked_ipv4, &rules.egress.blocked_ports)?;
+        Ok(())
     }
 
     pub fn poll_logs(&self, ms: u16) -> Option<Event> {

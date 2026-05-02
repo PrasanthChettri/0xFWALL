@@ -1,4 +1,4 @@
-epbf_path_ingress: "../C/target/epbf_xdp_ingresss.o"
+epbf_path_ingress: "../C/target/epbf_xdp_ingress.o"
 epbf_path_egress: "../C/target/epbf_tc_egress.o"
 rules_path: "rules.json"
 log_path: "blocked.log"

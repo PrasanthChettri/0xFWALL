@@ -1,8 +1,18 @@
 {
-  "blocked_ipv4": [
-    "127.0.0.1"
-  ],
-  "blocked_ports": [
+  "ingress": {
+    "blocked_ipv4": [
+      "127.0.0.1/32"
+    ],
+    "blocked_ports": [
       22
-  ]
+    ]
+  },
+  "egress": {
+    "blocked_ipv4": [
+      "8.8.8.8/32"
+    ],
+    "blocked_ports": [
+      443
+    ]
+  }
 }

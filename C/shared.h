@@ -54,11 +54,6 @@ struct ipv4_rule_key {
     __u32 addr;
 };
 
-/*
-struct ipv4_rule_key {
-    __u32 addr;
-};*/
-
 struct rule_value {
     __u8 action;
 };

@@ -3,9 +3,15 @@ use serde::Deserialize;
 use ipnet::Ipv4Net;
 
 #[derive(Deserialize, Debug)]
-pub struct Rules {
+pub struct RuleSet {
     pub blocked_ipv4: Vec<Ipv4Net>,
-    pub blocked_ports: Vec<u16>
+    pub blocked_ports: Vec<u16>,
+}
+
+#[derive(Deserialize, Debug)]
+pub struct Rules {
+    pub ingress: RuleSet,
+    pub egress: RuleSet,
 }
 
 impl Rules {

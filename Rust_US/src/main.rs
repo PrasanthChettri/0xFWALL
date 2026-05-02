@@ -3,7 +3,6 @@ use std::sync::Arc ;
 use std::sync::Mutex ; 
 
 use config::AppConfig;
-use log_writer::spawn_logger;
 use tokio::signal ; 
 use epbf::* ; 
 mod config ;
@@ -41,7 +40,7 @@ async fn main() {
     let rules = match Rules::load_from_file(&config.rules_path) {
         Ok(rules) => rules,
         Err(_) => {
-            log_tx.write(String::from("failed to load rules, exiting"));
+            log_tx.write(String::from("failed to load rules, exiting")).await;
             drop(log_tx); 
             let _ = log_worker.shutdown().await;
             return;
@@ -53,14 +52,14 @@ async fn main() {
     ) {
         Ok(xdp) => xdp,
         Err(err) => {
-            log_tx.write(format!("attach failed: {err}"));
+            log_tx.write(format!("attach failed: {err}")).await;
             drop(log_tx);
             let _ = log_worker.shutdown().await;
             return;
         }
     };
     
-    match _handler.lock().unwrap().load_rules_ingress(&rules.blocked_ipv4, &rules.blocked_ports) {
+    match _handler.lock().unwrap().load_rules(&rules) {
         Ok(_) => log_tx.write(String::from("loaded rules")).await, 
         Err(_) => {
             log_tx.write(String::from("failed to load rules")).await;
