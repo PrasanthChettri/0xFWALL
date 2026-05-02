@@ -37,6 +37,7 @@ impl fmt::Display for Event {
         let dst_ip = Ipv4Addr::from(u32::from_be(self.dst_ip));
         let src_port = u16::from_be(self.src_port);
         let dst_port = u16::from_be(self.dst_port);
+        let dt = UNIX_EPOCH + Duration::from_nanos(self.timestamp_ns);
 
         let reason_str = match self.reason {
             1 => "IP_BLOCK",
@@ -46,7 +47,8 @@ impl fmt::Display for Event {
 
         write!(
             f,
-            "ID: {:<5} | TYPE: {:<2} | SRC: {:<15}:{:>5} | DST: {:<15}:{:>5} | PROTO: {:>3} | REASON: {}",
+            "[{}] ID: {:<5} | TYPE: {:<2} | SRC: {:<15}:{:>5} | DST: {:<15}:{:>5} | PROTO: {:>3} | REASON: {}",
+            dt.format("%Y-%m-%d %H:%M:%S%.3f"),
             self.id,
             self.event_type,
             src_ip,
@@ -54,7 +56,7 @@ impl fmt::Display for Event {
             dst_ip,
             dst_port,
             self.protocol,
-            reason_str
+            reason_str, 
         )
     }
 }
@@ -101,14 +103,6 @@ impl EPBFProgram {
         let c_ifname = CString::new(ifname).map_err(|_| -1_i32)?;
 
         let err_epbf = unsafe { load_epbf(iop_cpath.as_ptr(), eop_cpath.as_ptr(), c_ifname.as_ptr()) };
-        /*
-        let err_xdp = unsafe { load_epbf(iop_cpath.as_ptr(), c_ifname.as_ptr()) };
-        let err_tc  = unsafe { load_tc(eop_cpath.as_ptr(), c_ifname.as_ptr()) };
-        let err = match err_xdp {
-            0 => err_tc,
-            err_xdp => err_xdp
-        } ;
-        */
         if err_epbf != 0 {
             return Err(err_epbf as i32);
         }

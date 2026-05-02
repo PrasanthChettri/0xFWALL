@@ -84,7 +84,7 @@ int EGRESS_PROG_ID(struct __sk_buff *skb) {
         event = bpf_ringbuf_reserve(&EVENT_LOG_MAP_ID, sizeof(*event), 0);
         if (event) {
             event->id = ++_id; 
-            event->timestamp_ns = bpf_ktime_get_ns();
+            event->timestamp_ns = bpf_ktime_get_real_ns() ; 
             event->src_ip = ip->saddr;
             event->dst_ip = ip->daddr;
             event->src_port = sport;
