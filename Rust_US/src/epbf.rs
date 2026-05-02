@@ -69,8 +69,9 @@ impl Event {
 }
 
 unsafe extern "C" {
-    fn load_xdp(path: *const c_char, ifname: *const c_char) -> u32;
-    fn load_tc(path: *const c_char, ifname: *const c_char) -> u32;
+    //fn load_xdp(path: *const c_char, ifname: *const c_char) -> u32;
+    //fn load_tc() -> u32;
+    fn load_epbf(tc_path: *const c_char, xdp_path: *const c_char, ifname: *const c_char) -> u32; 
     fn get_bpf_obj() -> *mut c_void;
     fn cleanup(bpf_md: *mut c_void);
     fn load_rules(rule_table: *const RulesFfi) -> c_int;
@@ -98,14 +99,17 @@ impl EPBFProgram {
         let eop_cpath   = CString::new(engress_obj_path).map_err(|_| -1_i32)?;
         let c_ifname = CString::new(ifname).map_err(|_| -1_i32)?;
 
-        let err_xdp = unsafe { load_xdp(iop_cpath.as_ptr(), c_ifname.as_ptr()) };
+        let err_epbf = unsafe { load_epbf(eop_cpath.as_ptr(), iop_cpath.as_ptr(), c_ifname.as_ptr()) };
+        /*
+        let err_xdp = unsafe { load_epbf(iop_cpath.as_ptr(), c_ifname.as_ptr()) };
         let err_tc  = unsafe { load_tc(eop_cpath.as_ptr(), c_ifname.as_ptr()) };
         let err = match err_xdp {
             0 => err_tc,
             err_xdp => err_xdp
         } ;
-        if err != 0 {
-            return Err(err as i32);
+        */
+        if err_epbf != 0 {
+            return Err(err_epbf as i32);
         }
         let bpf_obj = unsafe { get_bpf_obj() };
         Ok(

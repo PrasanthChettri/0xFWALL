@@ -14,7 +14,7 @@ struct {
     __type(key, struct ipv4_rule_key);
     __type(value, __u8);
     __uint(map_flags, BPF_F_NO_PREALLOC);
-} ipv4_rule_table SEC(".maps");
+} INGRESS_IPV4_RULE_MAP_ID SEC(".maps");
 
 
 struct {
@@ -22,13 +22,13 @@ struct {
     __uint(max_entries, MAX_BLOCKED_PORT);
     __type(key, struct port_rule_key);
     __type(value, struct rule_value);
-} port_rule_table SEC(".maps");
+} INGRESS_PORT_RULE_MAP_ID SEC(".maps");
 
 
 
 static __always_inline int check_ip_blocklist(__u32 saddr) {
     struct ipv4_rule_key src_key = { .addr = saddr };
-    struct rule_value *src_rule = bpf_map_lookup_elem(&ipv4_rule_table, &src_key);
+    struct rule_value *src_rule = bpf_map_lookup_elem(&INGRESS_IPV4_RULE_MAP_ID, &src_key);
     if (src_rule && src_rule->action == RULE_ACTION_DROP)
         return 1;
     return 0; 
@@ -54,13 +54,13 @@ static __always_inline int extract_and_check_port_blocklist(struct iphdr *ip, vo
     }
 
     struct port_rule_key key = { .port = dport };
-    struct rule_value *rule = bpf_map_lookup_elem(&port_rule_table, &key);
+    struct rule_value *rule = bpf_map_lookup_elem(&INGRESS_PORT_RULE_MAP_ID, &key);
     return  (int) (rule && rule->action == RULE_ACTION_DROP) ; 
 }
 
 int _id ; 
 SEC("xdp")
-int xdp_prog(struct xdp_md *ctx)
+int INGRESS_PROG_ID(struct xdp_md *ctx)
 {
     struct event *event;
     void *data = (void *)(long)ctx->data;
@@ -81,7 +81,7 @@ int xdp_prog(struct xdp_md *ctx)
     __u8 is_ip_blocked = check_ip_blocklist(ip->saddr) ; 
     __u8 is_port_blocked = extract_and_check_port_blocklist(ip, data_end) ; 
     if(is_ip_blocked | is_port_blocked){
-        event = bpf_ringbuf_reserve(&events, sizeof(*event), 0);
+        event = bpf_ringbuf_reserve(&EVENT_LOG_MAP_ID, sizeof(*event), 0);
         if (event) {
             event->id = ++_id ; 
             event->timestamp_ns = bpf_ktime_get_ns();
@@ -90,7 +90,7 @@ int xdp_prog(struct xdp_md *ctx)
             event->src_port = 0;
             event->dst_port = 0;
             event->protocol = ip->protocol;
-            event->reason = is_ip_blocked ? BLOCK_REASON_SRC_IPV4 : BLOCK_REASON_SRC_PORT;
+            event->reason = is_ip_blocked ? INGRESS_BLOCK_REASON_SRC_IPV4 : INGRESS_BLOCK_REASON_SRC_PORT;
             event->event_type = INGRESS_BLOCKED_EVENT;
             bpf_ringbuf_submit(event, 0);
         }
