@@ -91,7 +91,7 @@ int load_xdp(const char *obj_path, const char *ifname) {
         return -1;
     }
 
-    err = bpf_xdp_attach(bm->ingress_ifindex, bm->ingress_prog_fd, XDP_FLAGS_UPDATE_IF_NOEXIST, NULL);
+    err = bpf_xdp_attach(bm->ingress_ifindex, bm->ingress_prog_fd, 0, NULL);
     return err;
 }
 

@@ -6,6 +6,12 @@ use std::sync::Arc ;
 use std::sync::Mutex ; 
 use std::fmt;
 use crate::rules::Rules;
+use std::time;
+use std::time::UNIX_EPOCH;
+use std::time::Duration;
+use chrono::{DateTime, Local} ;
+
+
 
 #[repr(C)]
 struct RulesFfi {
@@ -37,18 +43,20 @@ impl fmt::Display for Event {
         let dst_ip = Ipv4Addr::from(u32::from_be(self.dst_ip));
         let src_port = u16::from_be(self.src_port);
         let dst_port = u16::from_be(self.dst_port);
-        let dt = UNIX_EPOCH + Duration::from_nanos(self.timestamp_ns);
+        let dt : DateTime<Local> = (UNIX_EPOCH + Duration::from_nanos(self.timestamp_ns)).into();
+        let ts = dt.format("%Y-%m-%d %H:%M:%S%.3f");
 
         let reason_str = match self.reason {
-            1 => "IP_BLOCK",
-            2 => "PORT_BLOCK",
-            _ => "UNKNOWN",
+            1 => "IP_BLOCK_INGRESS",
+            2 => "PORT_BLOCK_INGRESS",
+            3 => "IP_BLOCK_EGRESS",
+            4 => "PORT_BLOCK_EGRESS"
         };
 
         write!(
             f,
             "[{}] ID: {:<5} | TYPE: {:<2} | SRC: {:<15}:{:>5} | DST: {:<15}:{:>5} | PROTO: {:>3} | REASON: {}",
-            dt.format("%Y-%m-%d %H:%M:%S%.3f"),
+            ts, 
             self.id,
             self.event_type,
             src_ip,

@@ -5,6 +5,10 @@ use std::path::Path;
 use tokio::io::{AsyncWriteExt, BufWriter};
 use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
+use tokio::time::Duration;
+use tokio::time ; 
+use chrono::{DateTime, Local};
+
 
 use crate::epbf::Event;
 
@@ -75,15 +79,30 @@ pub fn spawn_logger<P: AsRef<Path>>(path: P, buffer_size: usize) -> (LogSender, 
             .open(path)
             .await?;
         let mut writer = BufWriter::new(file);
+        let mut ticker = time::interval(Duration::from_secs(3)) ; 
 
         // This loop automatically ends when ALL LogSenders are dropped
-        while let Some(event) = receiver.recv().await {
-            // Added a newline character here so your logs don't print on a single continuous line
-            let output = format!("{}\n", &event);
-            writer.write_all(output.as_bytes()).await?;
-        }
+        loop{
+            tokio::select!{
+                maybe_event = receiver.recv() => {
+                    match maybe_event {
+                        Some(e) =>  { 
+                            let output = format!("{}\n", &e);
+                            writer.write_all(output.as_bytes()).await?;
+                        },
+                        None => {
+                            writer.flush().await ;
+                            break;
+                        } 
+                    }
+                } , 
+                _ = ticker.tick() => {
+                    writer.flush().await ; 
+                } , 
+            }
 
-        writer.flush().await
+        }
+        Ok(())
     });
 
     (LogSender { sender }, LogWorker { task })
