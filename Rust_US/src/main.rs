@@ -1,21 +1,43 @@
-use std::sync::atomic::{AtomicBool, Ordering} ; 
-use std::sync::Arc ; 
-use std::sync::Mutex ; 
+use std::sync::Mutex;
 
 use config::AppConfig;
-use tokio::signal ; 
-use epbf::* ; 
-mod config ;
-mod epbf ;
-use rules::* ; 
-mod rules ;
-mod log_writer ;
+use tokio::signal;
+use epbf::*;
+mod config;
+mod epbf;
+use rules::*;
+use std::sync::Arc;
+use std::sync::atomic::Ordering;
+use tokio::signal::unix::SignalKind;
+use std::sync::atomic::AtomicBool;
+use tokio::signal::unix::signal;
+use tokio::sync::mpsc;
 
+mod rules;
+mod log_writer;
+
+pub enum AppEvent {
+    ReloadConfig,
+    Shutdown,
+}
+
+pub async fn handle_reload(config: &AppConfig, handler: &Mutex<EPBFProgram>, tx: &log_writer::LogSender) {
+    let rules = match Rules::load_from_file(&config.rules_path) {
+        Ok(rules) => rules,
+        Err(_) => {
+            tx.write(String::from("failed to reload rules")).await;
+            return;
+        }
+    };
+    let h = handler.lock().unwrap();
+    h.reload_rules(&rules);
+    tx.write(String::from("reloaded rules")).await;
+}
 
 #[tokio::main]
 async fn main() {
     let config = match AppConfig::load_from_file("config.yaml") {
-        Ok(config) => config,
+        Ok(config) => Arc::new(config),
         Err(_) => {
             eprintln!("failed to load config.yaml");
             return;
@@ -24,18 +46,6 @@ async fn main() {
 
     // 1. Spawn the logger, getting both halves.
     let (log_tx, log_worker) = log_writer::spawn_logger(&config.log_path, 1024);
-
-    let is_main_loop_running = Arc::new(AtomicBool::new(true));
-    let r = is_main_loop_running.clone();
-    
-    // Clone the sender for the Ctrl-C handler
-    let ctrl_c_tx = log_tx.clone(); 
-    tokio::spawn(async move {
-        signal::ctrl_c().await.expect("Failed to listen to kill signal");
-        ctrl_c_tx.write(String::from("Stopping service")).await;
-        r.store(false, Ordering::SeqCst);
-        // ctrl_c_tx is safely dropped here when this task ends.
-    });
 
     let rules = match Rules::load_from_file(&config.rules_path) {
         Ok(rules) => rules,
@@ -58,7 +68,7 @@ async fn main() {
             return;
         }
     };
-    
+
     match _handler.lock().unwrap().load_rules(&rules) {
         Ok(_) => log_tx.write(String::from("loaded rules")).await, 
         Err(_) => {
@@ -69,30 +79,69 @@ async fn main() {
         }
     }
 
+    let is_main_loop_running = Arc::new(AtomicBool::new(true));
+
+    // The central event channel
+    let (tx, mut rx) = mpsc::channel::<AppEvent>(32);
+
+    // SIGHUP Task - ONLY sends event
+    let tx_hup = tx.clone();
+    tokio::spawn(async move {
+        let mut sighup = signal(SignalKind::hangup()).expect("Failed to bind SIGHUP");
+        loop {
+            sighup.recv().await;
+            if tx_hup.send(AppEvent::ReloadConfig).await.is_err() {
+                break;
+            }
+        }
+    });
+
+    // Ctrl-C Task - ONLY sends event
+    let tx_ctrlc = tx.clone();
+    tokio::spawn(async move {
+        signal::ctrl_c().await.expect("Failed to listen to kill signal");
+        let _ = tx_ctrlc.send(AppEvent::Shutdown).await;
+    });
+
     let r_read = is_main_loop_running.clone();
     let handler_clone = _handler.clone();
     
     // Clone the sender for the polling task
     let poll_tx = log_tx.clone(); 
     let poll_task = tokio::task::spawn_blocking(move || {
-        let handler = handler_clone.lock().unwrap(); 
         while r_read.load(Ordering::SeqCst) {
-            if let Some(log) = handler.poll_logs(100) {
+            // Note: acquiring lock inside loop allows main thread to acquire lock for reloading.
+            let log = {
+                let handler = handler_clone.lock().unwrap(); 
+                handler.poll_logs(100)
+            };
+            if let Some(log) = log {
                 poll_tx.try_write(log);
             }
         }
-        // No need to return anything here! poll_tx is dropped automatically.
     });
 
-    // Wait for the polling loop to finish (which happens when r_read becomes false)
+    // Central Event Loop
+    while let Some(event) = rx.recv().await {
+        match event {
+            AppEvent::ReloadConfig => {
+                handle_reload(&config, &_handler, &log_tx).await;
+            }
+            AppEvent::Shutdown => {
+                log_tx.write(String::from("Stopping service")).await;
+                is_main_loop_running.store(false, Ordering::SeqCst);
+                break;
+            }
+        }
+    }
+
+    // Wait for the polling loop to finish
     poll_task.await.unwrap();
 
-    // 2. CRITICAL: Drop the main thread's copy of the sender.
-    // At this point, the ctrl-c sender is dropped, the poll sender is dropped.
-    // Dropping this final sender closes the mpsc channel, telling the BufWriter to flush and exit.
+    // CRITICAL: Drop the main thread's copies of senders
+    drop(tx);
     drop(log_tx);
 
-    // 3. Await the worker to ensure all logs are flushed to disk.
     if let Err(err) = log_worker.shutdown().await {
         eprintln!("log writer shutdown failed: {err}");
     }

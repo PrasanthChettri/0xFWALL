@@ -50,7 +50,8 @@ impl fmt::Display for Event {
             1 => "IP_BLOCK_INGRESS",
             2 => "PORT_BLOCK_INGRESS",
             3 => "IP_BLOCK_EGRESS",
-            4 => "PORT_BLOCK_EGRESS"
+            4 => "PORT_BLOCK_EGRESS" , 
+            _ => "UNKNOWN"
         };
 
         write!(
@@ -156,6 +157,11 @@ impl EPBFProgram {
             0       => Ok(()),
             ret_val => Err(ret_val as i32),
         }
+    }
+    
+    pub fn reload_rules(&self, rules: &Rules) -> Result<(), i32> {
+        dbg!("YAY") ; 
+        Ok(())
     }
 
     pub fn load_rules(&self, rules: &Rules) -> Result<(), i32> {
