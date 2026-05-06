@@ -255,6 +255,60 @@ int poll_logs(void *bpf_md, struct event *event, int ms) {
     return err;
 }
 
+struct rule_value rval = {
+    .action = RULE_ACTION_DROP,
+};
+
+
+// TODO : Too many branches for updation, can optimize it with specific functions and less instructions and check overhead
+// for now it is fine
+int manage_ipv4_rule(const struct ipv4_rule_key *rk, rule_action_t action, rule_direction_t direction) {
+    if (!bm || !rk) {
+        return -1;
+    }
+
+    int fd = (direction == RULE_DIRECTION_INGRESS) ? bm->ingress_ip_rule_map_fd : bm->egress_ip_rule_map_fd;
+    if (fd <= 0) {
+        return -1;
+    }
+
+    int status;
+    switch (action) {
+        case RULE_ACTION_UPSERT:
+            status = bpf_map_update_elem(fd, rk, &rval, BPF_ANY);
+            break;
+        case RULE_ACTION_DELETE:
+            status = bpf_map_delete_elem(fd, rk);
+            break;
+        default:
+            status = -2;
+    }
+    return status;
+}
+
+int manage_port_rule(const struct port_rule_key *rk, rule_action_t action, rule_direction_t direction) {
+    if (!bm || !rk) {
+        return -1;
+    }
+
+    int fd = (direction == RULE_DIRECTION_INGRESS) ? bm->ingress_port_rule_map_fd : bm->egress_port_rule_map_fd;
+    if (fd <= 0) {
+        return -1;
+    }
+    int status;
+    switch (action) {
+        case RULE_ACTION_UPSERT:
+            status = bpf_map_update_elem(fd, rk, &rval, BPF_ANY);
+            break;
+        case RULE_ACTION_DELETE:
+            status = bpf_map_delete_elem(fd, rk);
+            break;
+        default:
+            status = -2;
+    }
+    return status;
+}
+
 int load_ingress_rules(const struct rule_table* rt) {
     if (!bm || !rt->ipv4_list || !rt->ipv4_prefix_len || !rt->port_list) {
         return -1;

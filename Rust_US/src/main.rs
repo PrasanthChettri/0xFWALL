@@ -29,9 +29,11 @@ pub async fn handle_reload(config: &AppConfig, handler: &Mutex<EPBFProgram>, tx:
             return;
         }
     };
-    let h = handler.lock().unwrap();
-    h.reload_rules(&rules);
-    tx.write(String::from("reloaded rules")).await;
+    let mut h = handler.lock().unwrap();
+    match h.reload_rules(rules) {
+        Ok(_) => tx.write(String::from("reloaded rules")).await, 
+        Err(_) => tx.write(String::from("rule reload failed")).await, 
+    } ;
 }
 
 #[tokio::main]
@@ -69,7 +71,7 @@ async fn main() {
         }
     };
 
-    match _handler.lock().unwrap().load_rules(&rules) {
+    match _handler.lock().unwrap().load_rules(rules) {
         Ok(_) => log_tx.write(String::from("loaded rules")).await, 
         Err(_) => {
             log_tx.write(String::from("failed to load rules")).await;

@@ -5,10 +5,11 @@ use ipnet::Ipv4Net;
 use std::sync::Arc ; 
 use std::sync::Mutex ; 
 use std::fmt;
-use crate::rules::Rules;
+use crate::rules::{Rules, RuleSet};
 use std::time;
 use std::time::UNIX_EPOCH;
 use std::time::Duration;
+use std::collections::HashSet ; 
 use chrono::{DateTime, Local} ;
 
 
@@ -20,6 +21,31 @@ struct RulesFfi {
     ipv4_count: c_int,
     port_list:  *const u16,
     port_count: c_int,
+}
+
+#[repr(C)]
+enum c_direction {
+    INGRESS = 0 , 
+    EGRESS = 1
+}
+
+#[repr(C)]
+enum c_action {
+    UPSERT = 0 ,  
+    DELETE = 1 ,
+}
+
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+struct c_ipv4_rule {
+   prefix_len: u32 ,  
+   addr: u32 ,  
+}
+
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+struct c_port_rule {
+   port: u16 ,  
 }
 
 #[repr(C)]
@@ -85,13 +111,16 @@ unsafe extern "C" {
     fn load_epbf(xdp_path: *const c_char, tc_path: *const c_char, ifname: *const c_char) -> u32; 
     fn get_bpf_obj() -> *mut c_void;
     fn cleanup(bpf_md: *mut c_void);
-    fn load_ingress_rules(rule_table: *const RulesFfi) -> c_int;
-    fn load_egress_rules(rule_table: *const RulesFfi) -> c_int;
+
+    fn manage_ipv4_rule(ipv4_rule: *const c_ipv4_rule, action: c_int, direction: c_int) -> c_int; 
+    fn manage_port_rule(port_rule: *const c_port_rule, action: c_int, direction: c_int) -> c_int; 
+
     fn poll_logs(bpf_md: *mut c_void, event_ptr: *mut Event, ms: c_int) -> c_int;
 }
 
 pub struct EPBFProgram {
     handle: *mut c_void,
+    current_rules: Option<Rules>
 }
 
 unsafe impl Send for EPBFProgram {}
@@ -118,55 +147,167 @@ impl EPBFProgram {
         let bpf_obj = unsafe { get_bpf_obj() };
         Ok(
             Arc::new(
-                Mutex::new(Self { handle: bpf_obj })
+                Mutex::new(Self { handle: bpf_obj, current_rules: None })
             )
         )
     }
 
-    pub fn load_rules_ingress(&self, ipv4_list: &[Ipv4Net], port_list: &[u16]) -> Result<(), i32> {
-        let ipv4: Vec<u32> = ipv4_list.iter().map(|x| u32::from(x.addr()).to_be()).collect();
-        let ipv4_prefix: Vec<u32> = ipv4_list.iter().map(|x| x.prefix_len() as u32).collect();
-        let port: Vec<u16> = port_list.iter().map(|x| u16::from(*x).to_be()).collect();
-        let rule_table = RulesFfi {
-            ipv4_list:  ipv4.as_ptr(),
-            ipv4_prefix_len: ipv4_prefix.as_ptr(),
-            ipv4_count: ipv4.len() as c_int,
-            port_list:  port.as_ptr(),
-            port_count: port.len() as c_int,
+    fn get_diff(&self, new_rules: &Rules) -> (Rules, Rules) {
+        let current_unwrapped = self.current_rules.as_ref().unwrap();
+
+        // Convert current rules to HashSets
+        let c_ipv4_ingress_set: HashSet<_> = current_unwrapped.ingress.blocked_ipv4.iter().cloned().collect();
+        let c_ipv4_egress_set: HashSet<_> = current_unwrapped.egress.blocked_ipv4.iter().cloned().collect();
+        let c_port_ingress_set: HashSet<_> = current_unwrapped.ingress.blocked_ports.iter().cloned().collect();
+        let c_port_egress_set: HashSet<_> = current_unwrapped.egress.blocked_ports.iter().cloned().collect();
+
+        // Convert new rules to HashSets
+        let n_ipv4_ingress_set: HashSet<_> = new_rules.ingress.blocked_ipv4.iter().cloned().collect();
+        let n_ipv4_egress_set: HashSet<_> = new_rules.egress.blocked_ipv4.iter().cloned().collect();
+        let n_port_ingress_set: HashSet<_> = new_rules.ingress.blocked_ports.iter().cloned().collect();
+        let n_port_egress_set: HashSet<_> = new_rules.egress.blocked_ports.iter().cloned().collect();
+
+        // Calculate "to delete"
+        let ipv4_ingress_to_delete: Vec<_> = c_ipv4_ingress_set.difference(&n_ipv4_ingress_set).cloned().collect();
+        let ipv4_egress_to_delete: Vec<_> = c_ipv4_egress_set.difference(&n_ipv4_egress_set).cloned().collect();
+        let port_ingress_to_delete: Vec<_> = c_port_ingress_set.difference(&n_port_ingress_set).cloned().collect();
+        let port_egress_to_delete: Vec<_> = c_port_egress_set.difference(&n_port_egress_set).cloned().collect();
+
+        // Calculate "to add" (upsert)
+        let ipv4_ingress_to_add: Vec<_> = n_ipv4_ingress_set.difference(&c_ipv4_ingress_set).cloned().collect();
+        let ipv4_egress_to_add: Vec<_> = n_ipv4_egress_set.difference(&c_ipv4_egress_set).cloned().collect();
+        let port_ingress_to_add: Vec<_> = n_port_ingress_set.difference(&c_port_ingress_set).cloned().collect();
+        let port_egress_to_add: Vec<_> = n_port_egress_set.difference(&c_port_egress_set).cloned().collect();
+
+        let to_delete_rules = Rules {
+            ingress: RuleSet {
+                blocked_ipv4: ipv4_ingress_to_delete,
+                blocked_ports: port_ingress_to_delete,
+            },
+            egress: RuleSet {
+                blocked_ipv4: ipv4_egress_to_delete,
+                blocked_ports: port_egress_to_delete,
+            },
         };
-
-        match unsafe { load_ingress_rules(&rule_table as *const RulesFfi) } {
-            0       => Ok(()),
-            ret_val => Err(ret_val as i32),
-        }
-    }
-
-    pub fn load_rules_egress(&self, ipv4_list: &[Ipv4Net], port_list: &[u16]) -> Result<(), i32> {
-        let ipv4: Vec<u32> = ipv4_list.iter().map(|x| u32::from(x.addr()).to_be()).collect();
-        let ipv4_prefix: Vec<u32> = ipv4_list.iter().map(|x| x.prefix_len() as u32).collect();
-        let port: Vec<u16> = port_list.iter().map(|x| u16::from(*x).to_be()).collect();
-        let rule_table = RulesFfi {
-            ipv4_list:  ipv4.as_ptr(),
-            ipv4_prefix_len: ipv4_prefix.as_ptr(),
-            ipv4_count: ipv4.len() as c_int,
-            port_list:  port.as_ptr(),
-            port_count: port.len() as c_int,
+        let to_add_rules = Rules {
+            ingress: RuleSet {
+                blocked_ipv4: ipv4_ingress_to_add,
+                blocked_ports: port_ingress_to_add,
+            },
+            egress: RuleSet {
+                blocked_ipv4: ipv4_egress_to_add,
+                blocked_ports: port_egress_to_add,
+            },
         };
-
-        match unsafe { load_egress_rules(&rule_table as *const RulesFfi) } {
-            0       => Ok(()),
-            ret_val => Err(ret_val as i32),
-        }
+        (to_add_rules, to_delete_rules)
     }
     
-    pub fn reload_rules(&self, rules: &Rules) -> Result<(), i32> {
-        dbg!("YAY") ; 
+    pub fn reload_rules(&mut self, rules: Rules) -> Result<(), i32> {
+        match &self.current_rules {
+            Some(_) => {
+                let (to_add, to_delete) = self.get_diff(&rules) ; 
+                self.load_rules(to_add)? ; 
+                self.delete_rules(to_delete)?; 
+                self.current_rules = Some(rules) ;
+                Ok(())
+            },
+            None => self.load_rules(rules)
+        } 
+    }
+
+    fn upsert_rules(&mut self, rules: &Rules) -> Result<(), i32> {
+        // Ingress IPv4
+        for ip_net in &rules.ingress.blocked_ipv4 {
+            let c_rule = c_ipv4_rule {
+                prefix_len: ip_net.prefix_len() as u32,
+                addr: u32::from(ip_net.addr()).to_be(),
+            };
+            match unsafe { manage_ipv4_rule(&c_rule as *const c_ipv4_rule, c_action::UPSERT as i32, c_direction::INGRESS as i32) } {
+                0 => {},
+                err => return Err(err),
+            }
+        }
+
+        // Ingress Ports
+        for port in &rules.ingress.blocked_ports {
+            let c_rule = c_port_rule { port: port.to_be() };
+            match unsafe { manage_port_rule(&c_rule as *const c_port_rule, c_action::UPSERT as i32, c_direction::INGRESS as i32) } {
+                0 => {},
+                err => return Err(err),
+            }
+        }
+
+        // Egress IPv4
+        for ip_net in &rules.egress.blocked_ipv4 {
+            let c_rule = c_ipv4_rule {
+                prefix_len: ip_net.prefix_len() as u32,
+                addr: u32::from(ip_net.addr()).to_be(),
+            };
+            match unsafe { manage_ipv4_rule(&c_rule as *const c_ipv4_rule, c_action::UPSERT as i32, c_direction::EGRESS as i32) } {
+                0 => {},
+                err => return Err(err),
+            }
+        }
+
+        // Egress Ports
+        for port in &rules.egress.blocked_ports {
+            let c_rule = c_port_rule { port: port.to_be() };
+            match unsafe { manage_port_rule(&c_rule as *const c_port_rule, c_action::UPSERT as i32, c_direction::EGRESS as i32) } {
+                0 => {},
+                err => return Err(err),
+            }
+        }
         Ok(())
     }
 
-    pub fn load_rules(&self, rules: &Rules) -> Result<(), i32> {
-        self.load_rules_ingress(&rules.ingress.blocked_ipv4, &rules.ingress.blocked_ports)?;
-        self.load_rules_egress(&rules.egress.blocked_ipv4, &rules.egress.blocked_ports)?;
+    fn delete_rules(&mut self, rules: Rules) -> Result<(), i32> {
+        // Ingress IPv4
+        for ip_net in &rules.ingress.blocked_ipv4 {
+            let c_rule = c_ipv4_rule {
+                prefix_len: ip_net.prefix_len() as u32,
+                addr: u32::from(ip_net.addr()).to_be(),
+            };
+            match unsafe { manage_ipv4_rule(&c_rule as *const c_ipv4_rule, c_action::DELETE as i32, c_direction::INGRESS as i32) } {
+                0 => {},
+                err => return Err(err),
+            }
+        }
+
+        // Ingress Ports
+        for port in &rules.ingress.blocked_ports {
+            let c_rule = c_port_rule { port: port.to_be() };
+            match unsafe { manage_port_rule(&c_rule as *const c_port_rule, c_action::DELETE as i32, c_direction::INGRESS as i32) } {
+                0 => {},
+                err => return Err(err),
+            }
+        }
+
+        // Egress IPv4
+        for ip_net in &rules.egress.blocked_ipv4 {
+            let c_rule = c_ipv4_rule {
+                prefix_len: ip_net.prefix_len() as u32,
+                addr: u32::from(ip_net.addr()).to_be(),
+            };
+            match unsafe { manage_ipv4_rule(&c_rule as *const c_ipv4_rule, c_action::DELETE as i32, c_direction::EGRESS as i32) } {
+                0 => {},
+                err => return Err(err),
+            }
+        }
+
+        // Egress Ports
+        for port in &rules.egress.blocked_ports {
+            let c_rule = c_port_rule { port: port.to_be() };
+            match unsafe { manage_port_rule(&c_rule as *const c_port_rule, c_action::DELETE as i32, c_direction::EGRESS as i32) } {
+                0 => {},
+                err => return Err(err),
+            }
+        }
+        Ok(())
+    }
+
+    pub fn load_rules(&mut self, rules: Rules) -> Result<(), i32> {
+        self.upsert_rules(&rules)?;
+        self.current_rules = Some(rules);
         Ok(())
     }
 

@@ -2146,3 +2146,6 @@
 [EVENT] [1970-01-01 15:05:09.225] ID: 45    | TYPE: 1  | SRC: 192.168.248.1  :53807 | DST: 192.168.248.129:   22 | PROTO:   6 | REASON: PORT_BLOCK
 [EVENT] [1970-01-01 15:05:10.236] ID: 46    | TYPE: 1  | SRC: 192.168.248.1  :53807 | DST: 192.168.248.129:   22 | PROTO:   6 | REASON: PORT_BLOCK
 [INFO] Stopping service
+[INFO] loaded rules
+[INFO] Stopping service
+[INFO] attach failed: -17

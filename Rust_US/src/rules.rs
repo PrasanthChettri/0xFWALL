@@ -1,6 +1,7 @@
 use std::fs;
 use serde::Deserialize;
 use ipnet::Ipv4Net;
+use std::collections::HashSet ; 
 
 #[derive(Deserialize, Debug)]
 pub struct RuleSet {

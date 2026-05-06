@@ -41,6 +41,16 @@
 #define EGRESS_BLOCK_REASON_DST_PORT 4
 #define EGRESS_BLOCKED_EVENT 2
 
+typedef enum {
+    RULE_ACTION_UPSERT = 0,
+    RULE_ACTION_DELETE = 1,
+} rule_action_t;
+
+typedef enum {
+    RULE_DIRECTION_INGRESS = 0,
+    RULE_DIRECTION_EGRESS  = 1,
+} rule_direction_t;
+
 struct rule_table {
     const __u32 *ipv4_list;
     const __u32 *ipv4_prefix_len;
