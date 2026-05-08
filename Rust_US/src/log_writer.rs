@@ -86,7 +86,8 @@ pub fn spawn_logger<P: AsRef<Path>>(path: P, buffer_size: usize) -> (LogSender, 
                 maybe_event = receiver.recv() => {
                     match maybe_event {
                         Some(e) =>  { 
-                            let output = format!("{}\n", &e);
+                            let now = Local::now().format("%Y-%m-%d %H:%M:%S%.3f");
+                            let output = format!("[{}] {}\n", now, &e);
                             writer.write_all(output.as_bytes()).await?;
                         },
                         None => {

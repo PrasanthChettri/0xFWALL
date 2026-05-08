@@ -120,6 +120,8 @@ async fn main() {
                 poll_tx.try_write(log);
             }
         }
+        let mut handler = handler_clone.lock().unwrap(); 
+        handler.cleanup() ; 
     });
 
     // Central Event Loop

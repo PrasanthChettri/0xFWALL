@@ -52,7 +52,6 @@ struct c_port_rule {
 #[derive(Debug, Copy, Clone)]
 pub struct Event {
     pub id:           u64,
-    pub timestamp_ns: u64,
     pub src_ip:       u32,
     pub dst_ip:       u32,
     pub src_port:     u16,
@@ -69,8 +68,6 @@ impl fmt::Display for Event {
         let dst_ip = Ipv4Addr::from(u32::from_be(self.dst_ip));
         let src_port = u16::from_be(self.src_port);
         let dst_port = u16::from_be(self.dst_port);
-        let dt : DateTime<Local> = (UNIX_EPOCH + Duration::from_nanos(self.timestamp_ns)).into();
-        let ts = dt.format("%Y-%m-%d %H:%M:%S%.3f");
 
         let reason_str = match self.reason {
             1 => "IP_BLOCK_INGRESS",
@@ -82,8 +79,7 @@ impl fmt::Display for Event {
 
         write!(
             f,
-            "[{}] ID: {:<5} | TYPE: {:<2} | SRC: {:<15}:{:>5} | DST: {:<15}:{:>5} | PROTO: {:>3} | REASON: {}",
-            ts, 
+            "ID: {:<5} | TYPE: {:<2} | SRC: {:<15}:{:>5} | DST: {:<15}:{:>5} | PROTO: {:>3} | REASON: {}",
             self.id,
             self.event_type,
             src_ip,
@@ -138,6 +134,7 @@ impl EPBFProgram {
             return Err(-1) ; 
         }
         unsafe { cleanup(self.handle) } ; 
+        self.handle = std::ptr::null_mut() ; 
         Ok(())
     }
     pub fn attach(ingress_obj_path: &str, egress_obj_path: &str, ifname: &str) -> Result<Arc<Mutex<Self>>, i32> {

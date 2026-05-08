@@ -273,7 +273,3 @@ int manage_port_rule(const struct port_rule_key *rk, rule_action_t action, rule_
     }
     return status;
 }
-s = -2;
-    }
-    return status;
-}
