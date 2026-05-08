@@ -8,41 +8,41 @@ A Linux firewall built on eBPF. Packets are filtered at two kernel hooks before 
 
 ```
                         ┌─────────────────────────────────────────┐
-                        │              Linux Kernel                │
-                        │                                          │
+                        │              Linux Kernel               │
+                        │                                         │
   Incoming packet ──────►  [XDP hook]  epbf_xdp_ingress.o         │
-                        │      │                                   │
+                        │      │                                  │
                         │   XDP_DROP / XDP_PASS                   │
-                        │      │                                   │
-                        │  kernel network stack                    │
-                        │                                          │
+                        │      │                                  │
+                        │  kernel network stack                   │
+                        │                                         │
   Outgoing packet ◄─────  [TC hook]   epbf_tc_egress.o            │
-                        │      │                                   │
+                        │      │                                  │
                         │  TC_ACT_SHOT / TC_ACT_OK                │
-                        │      │                                   │
+                        │      │                                  │
                         │  BPF Maps (rules + event ring buffer)   │
                         └──────────────┬──────────────────────────┘
                                        │  libbpf
                                        │
                         ┌──────────────▼──────────────────────────┐
-                        │           loader.c  (C userspace)        │
-                        │                                          │
-                        │  - Loads and attaches both BPF objects   │
-                        │  - Reads/writes BPF maps                 │
-                        │  - Polls the ring buffer                 │
-                        │                                          │
-                        │  Compiled to: libloader.a                │
+                        │           loader.c  (C userspace)       │
+                        │                                         │
+                        │  - Loads and attaches both BPF objects  │
+                        │  - Reads/writes BPF maps                │
+                        │  - Polls the ring buffer                │
+                        │                                         │
+                        │  Compiled to: libloader.a               │
                         └──────────────┬──────────────────────────┘
                                        │  Rust FFI (extern "C")
                                        │  linked via build.rs
                                        │
                         ┌──────────────▼──────────────────────────┐
-                        │         Rust daemon  (Rust_US)           │
-                        │                                          │
-                        │  - Owns the EPBFProgram handle           │
-                        │  - Loads rules from rules.json           │
-                        │  - Hot-reloads on SIGHUP                 │
-                        │  - Writes events to blocked.log          │
+                        │         Rust daemon  (Rust_US)          │
+                        │                                         │
+                        │  - Owns the EPBFProgram handle          │
+                        │  - Loads rules from rules.json          │
+                        │  - Hot-reloads on SIGHUP                │
+                        │  - Writes events to blocked.log         │
                         └─────────────────────────────────────────┘
 ```
 
