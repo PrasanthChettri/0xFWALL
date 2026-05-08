@@ -9,14 +9,13 @@ use tokio::time::Duration;
 use tokio::time ; 
 use chrono::{DateTime, Local};
 
-
 use crate::epbf::Event;
 
 pub enum LogLevel {
     Debug,
     Warn,
     Error,
-    Info,
+    Info
 }
 
 pub enum LogEntry {
@@ -43,7 +42,7 @@ impl fmt::Display for LogEntry {
                     LogLevel::Debug => "DEBUG",
                     LogLevel::Warn => "WARN",
                     LogLevel::Error => "ERROR",
-                    LogLevel::Info => "INFO",
+                    LogLevel::Info => "INFO"
                 };
                 write!(f, "[{}] {}", label, msg_str)
             }

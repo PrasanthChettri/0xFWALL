@@ -2150,3 +2150,43 @@
 [INFO] Stopping service
 [INFO] attach failed: -17
 [INFO] attach failed: -17
+[INFO] loaded rules
+[INFO] Stopping service
+[INFO] loaded rules
+[INFO] Stopping service
+[INFO] loaded rules
+[INFO] Stopping service
+[INFO] loaded rules
+[INFO] Stopping service
+[INFO] loaded rules
+[INFO] Stopping service
+[INFO] loaded rules
+[INFO] Stopping service
+[INFO] loaded rules
+[INFO] Stopping service
+[INFO] loaded rules
+[INFO] Stopping service
+[INFO] loaded rules
+[INFO] Stopping service
+[INFO] loaded rules
+[INFO] Stopping service
+[INFO] loaded rules
+[INFO] Stopping service
+[INFO] loaded rules
+[INFO] Stopping service
+[INFO] loaded rules
+[INFO] Stopping service
+[INFO] loaded rules
+[INFO] Stopping service
+[INFO] loaded rules
+[EVENT] [1970-01-01 22:20:21.165] ID: 1     | TYPE: 1  | SRC: 127.0.0.1      :43376 | DST: 127.0.0.1      :   22 | PROTO:   6 | REASON: PORT_BLOCK_INGRESS
+[EVENT] [1970-01-01 22:20:22.190] ID: 2     | TYPE: 1  | SRC: 127.0.0.1      :43376 | DST: 127.0.0.1      :   22 | PROTO:   6 | REASON: PORT_BLOCK_INGRESS
+[EVENT] [1970-01-01 22:20:23.214] ID: 3     | TYPE: 1  | SRC: 127.0.0.1      :43376 | DST: 127.0.0.1      :   22 | PROTO:   6 | REASON: PORT_BLOCK_INGRESS
+[EVENT] [1970-01-01 22:20:24.238] ID: 4     | TYPE: 1  | SRC: 127.0.0.1      :43376 | DST: 127.0.0.1      :   22 | PROTO:   6 | REASON: PORT_BLOCK_INGRESS
+[EVENT] [1970-01-01 22:20:25.262] ID: 5     | TYPE: 1  | SRC: 127.0.0.1      :43376 | DST: 127.0.0.1      :   22 | PROTO:   6 | REASON: PORT_BLOCK_INGRESS
+[EVENT] [1970-01-01 22:20:26.286] ID: 6     | TYPE: 1  | SRC: 127.0.0.1      :43376 | DST: 127.0.0.1      :   22 | PROTO:   6 | REASON: PORT_BLOCK_INGRESS
+[EVENT] [1970-01-01 22:20:28.334] ID: 7     | TYPE: 1  | SRC: 127.0.0.1      :43376 | DST: 127.0.0.1      :   22 | PROTO:   6 | REASON: PORT_BLOCK_INGRESS
+[EVENT] [1970-01-01 22:20:32.366] ID: 8     | TYPE: 1  | SRC: 127.0.0.1      :43376 | DST: 127.0.0.1      :   22 | PROTO:   6 | REASON: PORT_BLOCK_INGRESS
+[EVENT] [1970-01-01 22:20:40.430] ID: 9     | TYPE: 1  | SRC: 127.0.0.1      :43376 | DST: 127.0.0.1      :   22 | PROTO:   6 | REASON: PORT_BLOCK_INGRESS
+[EVENT] [1970-01-01 22:20:56.814] ID: 10    | TYPE: 1  | SRC: 127.0.0.1      :43376 | DST: 127.0.0.1      :   22 | PROTO:   6 | REASON: PORT_BLOCK_INGRESS
+[INFO] Stopping service

@@ -17,7 +17,7 @@ struct bpf_metadata {
 
     int ingress_prog_fd, ingress_ifindex, ingress_ip_rule_map_fd, ingress_port_rule_map_fd;
     int egress_prog_fd, egress_ifindex, egress_ip_rule_map_fd, egress_port_rule_map_fd;
-
+    struct bpf_link *xdp_link, *tc_link ; 
     int log_map_fd;
     struct ring_buffer *log_rb;
     struct event *latest_event;
@@ -91,7 +91,7 @@ int load_xdp(const char *obj_path, const char *ifname) {
         return -1;
     }
 
-    err = bpf_xdp_attach(bm->ingress_ifindex, bm->ingress_prog_fd, 0, NULL);
+    bm->xdp_link = bpf_program__attach_xdp(bm->ingress_prog,bm->ingress_ifindex) ;
     return err;
 }
 
@@ -138,25 +138,7 @@ int load_tc(const char* obj_path, const char* ifname) {
     if (!bm->egress_ifindex) {
         return -1;
     }
-
-    // TC attachment logic
-    struct bpf_tc_hook tc_hook;
-    memset(&tc_hook, 0, sizeof(tc_hook));
-    tc_hook.sz = sizeof(tc_hook);
-    tc_hook.ifindex = bm->egress_ifindex;
-    tc_hook.attach_point = BPF_TC_EGRESS;
-
-    err = bpf_tc_hook_create(&tc_hook);
-    if (err){
-        return err;
-    }
-
-    struct bpf_tc_opts tc_opts;
-    memset(&tc_opts, 0, sizeof(tc_opts));
-    tc_opts.sz = sizeof(tc_opts);
-    tc_opts.prog_fd = bm->egress_prog_fd;
-
-    err = bpf_tc_attach(&tc_hook, &tc_opts);
+    bm->tc_link = bpf_program__attach_tcx(bm->egress_prog, bm->egress_ifindex, NULL) ; 
     if (err) {
         return err;
     }
@@ -210,29 +192,12 @@ void cleanup(void *bpf_md) {
     pthread_mutex_unlock(&bpf_md_s->log_rb_lock);
     pthread_mutex_destroy(&bpf_md_s->log_rb_lock);
 
-    if (bpf_md_s->ingress_ifindex > 0) {
-        bpf_xdp_detach(bpf_md_s->ingress_ifindex, XDP_FLAGS_UPDATE_IF_NOEXIST, NULL);
+  
+    if (bpf_md_s->xdp_link) {
+        bpf_link__destroy(bpf_md_s->xdp_link);
     }
-    if (bpf_md_s->egress_ifindex > 0 && bpf_md_s->egress_prog_fd > 0) {
-        struct bpf_tc_hook tc_hook;
-        memset(&tc_hook, 0, sizeof(tc_hook));
-        tc_hook.sz = sizeof(tc_hook);
-        tc_hook.ifindex = bpf_md_s->egress_ifindex;
-        tc_hook.attach_point = BPF_TC_EGRESS;
-
-        struct bpf_tc_opts tc_opts;
-        memset(&tc_opts, 0, sizeof(tc_opts));
-        tc_opts.sz = sizeof(tc_opts);
-        tc_opts.prog_fd = bpf_md_s->egress_prog_fd;
-
-        bpf_tc_detach(&tc_hook, &tc_opts);
-    }
-
-    if (bpf_md_s->ingress_obj) {
-        bpf_object__close(bpf_md_s->ingress_obj);
-    }
-    if (bpf_md_s->egress_obj) {
-        bpf_object__close(bpf_md_s->egress_obj);
+    if (bpf_md_s->tc_link) {
+        bpf_link__destroy(bpf_md_s->tc_link);
     }
     
     free(bpf_md_s);
@@ -305,6 +270,10 @@ int manage_port_rule(const struct port_rule_key *rk, rule_action_t action, rule_
             break;
         default:
             status = -2;
+    }
+    return status;
+}
+s = -2;
     }
     return status;
 }

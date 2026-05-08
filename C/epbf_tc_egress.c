@@ -58,7 +58,7 @@ static __always_inline int extract_and_check_port_blocklist(struct iphdr *ip, vo
 }
 
 int _id; 
-SEC("tc")
+SEC("tc/egress")
 int EGRESS_PROG_ID(struct __sk_buff *skb) {
     struct event *event;
     void *data = (void *)(long)skb->data;

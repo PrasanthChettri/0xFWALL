@@ -128,13 +128,18 @@ unsafe impl Sync for EPBFProgram {}
 
 impl Drop for EPBFProgram {
     fn drop(&mut self) {
-        if !self.handle.is_null() {
-            unsafe { cleanup(self.handle) }
-        }
+        self.cleanup() ; 
     }
 }
 
 impl EPBFProgram {
+    pub fn cleanup(&mut self) -> Result<(), i32> {
+        if self.handle.is_null() {
+            return Err(-1) ; 
+        }
+        unsafe { cleanup(self.handle) } ; 
+        Ok(())
+    }
     pub fn attach(ingress_obj_path: &str, egress_obj_path: &str, ifname: &str) -> Result<Arc<Mutex<Self>>, i32> {
         let iop_cpath   = CString::new(ingress_obj_path).map_err(|_| -1_i32)?;
         let eop_cpath   = CString::new(egress_obj_path).map_err(|_| -1_i32)?;

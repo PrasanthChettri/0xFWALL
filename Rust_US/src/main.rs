@@ -112,10 +112,9 @@ async fn main() {
     let poll_tx = log_tx.clone(); 
     let poll_task = tokio::task::spawn_blocking(move || {
         while r_read.load(Ordering::SeqCst) {
-            // Note: acquiring lock inside loop allows main thread to acquire lock for reloading.
             let log = {
                 let handler = handler_clone.lock().unwrap(); 
-                handler.poll_logs(100)
+                handler.poll_logs(50)
             };
             if let Some(log) = log {
                 poll_tx.try_write(log);
