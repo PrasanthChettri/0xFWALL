@@ -83,7 +83,7 @@ struct event {
     __u32 dst_ip;
     __u16 src_port;
     __u16 dst_port;
-    __u8 protocol;
+    __s8 protocol;
     __u8 reason;
     __u8 event_type;
     __u8 _pad;

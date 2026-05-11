@@ -5,6 +5,9 @@
 #include <linux/ip.h>
 #include <bpf/bpf_helpers.h>
 #include <linux/in.h>
+#include <linux/in.h>
+#include <linux/udp.h>
+#include <linux/ipv6.h>
 #include "shared.h"
 #include "shared_krings.h"
 
@@ -26,7 +29,7 @@ struct {
 
 
 
-static __always_inline int check_ip_blocklist(__u32 saddr) {
+static __always_inline int check_ip4_blocklist(__u32 saddr) {
     struct ipv4_rule_key src_key = { .prefixlen = 32, .addr = saddr };
     struct rule_value *src_rule = bpf_map_lookup_elem(&INGRESS_IPV4_RULE_MAP_ID, &src_key);
     if (src_rule && src_rule->action == RULE_ACTION_DROP)
@@ -41,43 +44,46 @@ static __always_inline int extract_and_check_port_blocklist(void *ip_hdr, void* 
     __u8 protocol; 
     if (ip_type == IPTYPE_IPV4 ) {
         struct iphdr * ip = (struct iphdr *) ip_hdr  ; 
-        cursor = ip + ip->ihl * 4;
+        cursor = ( (void * )ip ) + ip->ihl * 4;
         protocol = ip->protocol; 
     }
     else if (ip_type  == IPTYPE_IPV6) {
-        struct ipv6hdr * ip = (struct ipv6hdr *) ip_hdr ; 
-        protocol = ip->nexthdr ; 
-        cursor = void * (ip_hdr + 1) ; 
-        #pragma unroll
-        for(int i = 0 ; i < MAX_IPV6_EXT_HDRS; i++) {
-            if(protocol == IPPROTO_TCP || protcol == IPPROTO_UDP)
-                break ; 
-            if (protocol == IPPROTO_HOPOPTS || 
-                protocol == IPPROTO_ROUTING || 
-                protocol == IPPROTO_DSTOPTS) {
-                protocol =  ((struct ipv6_opt_hdr *) cursor)->nexthdr ; 
-                cursor = cursor + sizeof(struct ipv6_opt_hdr) ; 
-                if(cursor > data_end) goto port_pass ;
-            } else if(
+            struct ipv6hdr * ip = (struct ipv6hdr *) ip_hdr ; 
+            protocol = ip->nexthdr ; 
+            cursor = (void *)(ip_hdr + 1) ; 
+            #pragma unroll
+            for(int i = 0 ; i < MAX_IPV6_EXT_HDRS; i++) {
+                if(protocol == IPPROTO_TCP || protocol == IPPROTO_UDP)
+                    break ; 
+                if (protocol == IPPROTO_HOPOPTS || 
+                    protocol == IPPROTO_ROUTING || 
+                    protocol == IPPROTO_DSTOPTS) {
+                    struct ipv6_opt_hdr *exh_head = (struct ipv6_opt_hdr *)cursor ; 
+                    if( (  void * ) (exh_head + 1)  > data_end ) goto port_pass ; 
+                    protocol = exh_head->nexthdr ; 
+                    cursor += (exh_head->hdrlen + 1) * 8 ; 
+                } else if(protocol == IPPROTO_FRAGMENT) {
+                    // frag_hdr defeinition not found for some reason just use opt hdr struct frag_hdr * frag = (struct frag_hdr *) cursor;
+                    struct ipv6_opt_hdr *frag = (struct ipv6_opt_hdr *)cursor ; 
+                    if ( (void *) (frag + 1)  > data_end)  goto port_pass ;
+                    protocol = frag->nexthdr ; 
+                    cursor += 8 ;
+                } else goto port_pass ; 
+        }
     }
-    else goto port_pass ; 
 
-    if (ip->protocol == IPPROTO_TCP) {
-        struct tcphdr *tcp = l4_start;
+    if (protocol == IPPROTO_TCP) {
+        struct tcphdr *tcp = (struct tcphdr *) cursor;
         if ((void *)(tcp + 1) > data_end) goto port_pass ; 
         *dport = tcp->dest;
         *sport = tcp->source;
-        goto port_check ; 
-    } else if (ip->protocol == IPPROTO_UDP) {
-        struct udphdr *udp = l4_start;
+    } else if (protocol == IPPROTO_UDP) {
+        struct udphdr *udp = (struct udphdr *) cursor;
         if ((void *)(udp + 1) > data_end) goto port_pass ; 
         *dport = udp->dest;
         *sport = udp->source;
-    } else goto port_pass ;
-
-    struct ipv6hdr *ip  = (struct iphdr *) ip_hdr ; 
-    if( (void *) (ip + 1) > data_end ) goto port_pass ; 
-
+    }
+    else goto port_pass ;
 
     struct port_rule_key key = { .port = *dport };
     struct rule_value *rule = bpf_map_lookup_elem(&INGRESS_PORT_RULE_MAP_ID, &key);
@@ -102,29 +108,44 @@ int INGRESS_PROG_ID(struct xdp_md *ctx)
     void *ip = data + sizeof(*eth);
 
     int ip_type = 0 ; 
-    if (eth->h_proto == __constant_htons(ETH_P_IP))
+    __s8 protocol = -1; 
+    if (eth->h_proto == __constant_htons(ETH_P_IP)) {
+        struct iphdr *ip4 = (struct iphdr *)ip;
+        if ( (void *)(ip4 + 1) > data_end )  goto pass ;
+        protocol = ip4->protocol ; 
         ip_type = IPTYPE_IPV4 ; 
-    else if (eth->h_proto != __constant_htons(ETH_P_IPV6))
+    }
+    else if (eth->h_proto != __constant_htons(ETH_P_IPV6)) {
+        struct ipv6hdr * ip6 = (struct ipv6hdr *)ip;
+        if ( (void *)(ip6 + 1) > data_end )  goto pass ;
+        protocol = ip6->nexthdr ; 
         ip_type = IPTYPE_IPV6 ; 
-    else :
-        goto pass ; 
-
-
-    if ((void *)(ip + 1) > data_end)
-        goto pass ; 
+    } else goto pass ; 
 
     __u16 sport = 0, dport = 0;
-    __u8 is_ip_blocked = check_ip_blocklist(ip->saddr) ; 
-    __u8 is_port_blocked = extract_and_check_port_blocklist(ip, data_end, &sport, &dport) ; 
+    __u8 is_ip_blocked = 1 ; 
+    if(ip_type == IPTYPE_IPV4)
+        __u8 is_ip_blocked = check_ip4_blocklist(((struct iphdr *)ip)->saddr) ; 
+
+    __u8 is_port_blocked = extract_and_check_port_blocklist(ip, data_end, &sport, &dport, ip_type) ; 
     if(is_ip_blocked | is_port_blocked){
         event = bpf_ringbuf_reserve(&EVENT_LOG_MAP_ID, sizeof(*event), 0);
         if (event) {
             event->id = ++_id ; 
-            event->src_ip = ip->saddr;
-            event->dst_ip = ip->daddr;
+            if (ip_type == IPTYPE_IPV4) {
+                struct iphdr *ip4 = (struct iphdr *)ip;
+                event->src_ip = ip4->saddr;
+                event->dst_ip = ip4->daddr;
+            } else {
+                // If it's IPv6, you cannot assign a 128-bit address to a 32-bit field.
+                // You must leave src_ip blank here unless you update your 'struct event' 
+                // in shared.h to hold IPv6 address arrays.
+                event->src_ip = 0; 
+                event->dst_ip = 0;
+            }
             event->src_port = sport;
             event->dst_port = dport;
-            event->protocol = ip->protocol;
+            event->protocol = protocol;
             event->reason = is_ip_blocked ? INGRESS_BLOCK_REASON_SRC_IPV4 : INGRESS_BLOCK_REASON_SRC_PORT;
             event->event_type = INGRESS_BLOCKED_EVENT;
             bpf_ringbuf_submit(event, 0);
