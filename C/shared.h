@@ -41,6 +41,11 @@
 #define EGRESS_BLOCK_REASON_DST_PORT 4
 #define EGRESS_BLOCKED_EVENT 2
 
+#define IPTYPE_IPV6 1
+#define IPTYPE_IPV4 0
+
+#define MAX_IPV6_EXT_HDRS 6
+
 typedef enum {
     RULE_ACTION_UPSERT = 0,
     RULE_ACTION_DELETE = 1,

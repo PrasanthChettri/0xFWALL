@@ -34,28 +34,57 @@ static __always_inline int check_ip_blocklist(__u32 saddr) {
     return 0; 
 }
 
-static __always_inline int extract_and_check_port_blocklist(struct iphdr *ip, void* data_end, __u16 *sport, __u16 *dport) {
-    void *l4_start = (void *)ip + (ip->ihl * 4);
+static __always_inline int extract_and_check_port_blocklist(void *ip_hdr, void* data_end, __u16 *sport, __u16 *dport, int ip_type) {
     *dport = 0;
     *sport = 0;
+    void * cursor ; 
+    __u8 protocol; 
+    if (ip_type == IPTYPE_IPV4 ) {
+        struct iphdr * ip = (struct iphdr *) ip_hdr  ; 
+        cursor = ip + ip->ihl * 4;
+        protocol = ip->protocol; 
+    }
+    else if (ip_type  == IPTYPE_IPV6) {
+        struct ipv6hdr * ip = (struct ipv6hdr *) ip_hdr ; 
+        protocol = ip->nexthdr ; 
+        cursor = void * (ip_hdr + 1) ; 
+        #pragma unroll
+        for(int i = 0 ; i < MAX_IPV6_EXT_HDRS; i++) {
+            if(protocol == IPPROTO_TCP || protcol == IPPROTO_UDP)
+                break ; 
+            if (protocol == IPPROTO_HOPOPTS || 
+                protocol == IPPROTO_ROUTING || 
+                protocol == IPPROTO_DSTOPTS) {
+                protocol =  ((struct ipv6_opt_hdr *) cursor)->nexthdr ; 
+                cursor = cursor + sizeof(struct ipv6_opt_hdr) ; 
+                if(cursor > data_end) goto port_pass ;
+            } else if(
+    }
+    else goto port_pass ; 
 
     if (ip->protocol == IPPROTO_TCP) {
         struct tcphdr *tcp = l4_start;
-        if ((void *)(tcp + 1) > data_end) return 0;
+        if ((void *)(tcp + 1) > data_end) goto port_pass ; 
         *dport = tcp->dest;
         *sport = tcp->source;
+        goto port_check ; 
     } else if (ip->protocol == IPPROTO_UDP) {
         struct udphdr *udp = l4_start;
-        if ((void *)(udp + 1) > data_end) return 0;
+        if ((void *)(udp + 1) > data_end) goto port_pass ; 
         *dport = udp->dest;
         *sport = udp->source;
-    } else {
-        return 0;
-    }
+    } else goto port_pass ;
+
+    struct ipv6hdr *ip  = (struct iphdr *) ip_hdr ; 
+    if( (void *) (ip + 1) > data_end ) goto port_pass ; 
+
 
     struct port_rule_key key = { .port = *dport };
     struct rule_value *rule = bpf_map_lookup_elem(&INGRESS_PORT_RULE_MAP_ID, &key);
     return  (int) (rule && rule->action == RULE_ACTION_DROP) ; 
+
+    port_pass : 
+        return 0;
 }
 
 int _id ; 
@@ -68,15 +97,21 @@ int INGRESS_PROG_ID(struct xdp_md *ctx)
     struct ethhdr *eth = data;
 
     if ((void *)(eth + 1) > data_end)
-        return XDP_PASS;
+        goto pass ;
 
-    if (eth->h_proto != __constant_htons(ETH_P_IP))
-        return XDP_PASS;
+    void *ip = data + sizeof(*eth);
 
-    struct iphdr *ip = data + sizeof(*eth);
+    int ip_type = 0 ; 
+    if (eth->h_proto == __constant_htons(ETH_P_IP))
+        ip_type = IPTYPE_IPV4 ; 
+    else if (eth->h_proto != __constant_htons(ETH_P_IPV6))
+        ip_type = IPTYPE_IPV6 ; 
+    else :
+        goto pass ; 
+
 
     if ((void *)(ip + 1) > data_end)
-        return XDP_PASS;
+        goto pass ; 
 
     __u16 sport = 0, dport = 0;
     __u8 is_ip_blocked = check_ip_blocklist(ip->saddr) ; 
@@ -94,8 +129,11 @@ int INGRESS_PROG_ID(struct xdp_md *ctx)
             event->event_type = INGRESS_BLOCKED_EVENT;
             bpf_ringbuf_submit(event, 0);
         }
-        return XDP_DROP;
+        goto drop ; 
     }
-    return XDP_PASS;
+    pass: 
+        return XDP_PASS;
+    drop: 
+        return XDP_DROP;
 }
 char LICENSE[] SEC("license") = "GPL";
