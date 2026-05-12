@@ -19,20 +19,23 @@
 
 // Ingress (XDP) Constants
 #define INGRESS_IPV4_RULE_MAP_ID ingress_ipv4_rule_table
+#define INGRESS_IPV6_RULE_MAP_ID ingress_ipv6_rule_table
 #define INGRESS_PORT_RULE_MAP_ID ingress_port_rule_table
 #define INGRESS_PROG_ID xdp_prog
 
 #define INGRESS_IPV4_RULE_MAP_ALIAS STR(INGRESS_IPV4_RULE_MAP_ID)
+#define INGRESS_IPV6_RULE_MAP_ALIAS STR(INGRESS_IPV6_RULE_MAP_ID)
 #define INGRESS_PORT_RULE_MAP_ALIAS STR(INGRESS_PORT_RULE_MAP_ID)
 #define INGRESS_PROG_NAME STR(INGRESS_PROG_ID)
 
 #define INGRESS_BLOCK_REASON_SRC_IPV4 1
+#define INGRESS_BLOCK_REASON_SRC_IPV6 5
 #define INGRESS_BLOCK_REASON_SRC_PORT 2
 #define INGRESS_BLOCKED_EVENT 1
 
 // Egress (TC) Constants
 #define EGRESS_IPV4_RULE_MAP_ID egress_ipv4_rule_table
-#define INGRESS_IPV6_RULE_MAP_ID egress_ipv6_rule_table
+#define EGRESS_IPV6_RULE_MAP_ID egress_ipv6_rule_table
 #define EGRESS_PORT_RULE_MAP_ID egress_port_rule_table
 #define EGRESS_PROG_ID tc_prog
 
@@ -42,6 +45,7 @@
 #define EGRESS_PROG_NAME STR(EGRESS_PROG_ID)
 
 #define EGRESS_BLOCK_REASON_DST_IPV4 3
+#define EGRESS_BLOCK_REASON_DST_IPV6 6
 #define EGRESS_BLOCK_REASON_DST_PORT 4
 #define EGRESS_BLOCKED_EVENT 2
 
@@ -95,7 +99,7 @@ struct event {
     __s8 protocol;
     __u8 reason;
     __u8 event_type;
-    __u8 _pad;
+    __u8 ip_type;
 };
 
 #endif

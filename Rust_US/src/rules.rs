@@ -1,11 +1,12 @@
 use std::fs;
 use serde::Deserialize;
-use ipnet::Ipv4Net;
+use ipnet::{Ipv4Net, Ipv6Net};
 use std::collections::HashSet ; 
 
 #[derive(Deserialize, Debug)]
 pub struct RuleSet {
     pub blocked_ipv4: Vec<Ipv4Net>,
+    pub blocked_ipv6: Vec<Ipv6Net>,
     pub blocked_ports: Vec<u16>,
 }
 

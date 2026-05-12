@@ -1,15 +1,12 @@
 {
   "ingress": {
-    "blocked_ipv4": [
-    ],
-    "blocked_ports": [
-      22
-    ]
+    "blocked_ipv4": [],
+    "blocked_ipv6": [],
+    "blocked_ports": [22]
   },
   "egress": {
-    "blocked_ipv4": [
-    ],
-    "blocked_ports": [
-    ]
+    "blocked_ipv4": [],
+    "blocked_ipv6": [],
+    "blocked_ports": []
   }
 }

@@ -152,21 +152,30 @@ int INGRESS_PROG_ID(struct xdp_md *ctx)
         event = bpf_ringbuf_reserve(&EVENT_LOG_MAP_ID, sizeof(*event), 0);
         if (event) {
             event->id = ++_id ; 
+            event->ip_type = ip_type ; 
             if (ip_type == IPTYPE_IPV4) {
                 struct iphdr *ip4 = (struct iphdr *)ip;
-                event->src_ip = ip4->saddr;
-                event->dst_ip = ip4->daddr;
+                event->src_ip[0] = ip4->saddr;
+                event->src_ip[1] = 0;
+                event->src_ip[2] = 0;
+                event->src_ip[3] = 0;
+                event->dst_ip[0] = ip4->daddr;
+                event->dst_ip[1] = 0;
+                event->dst_ip[2] = 0;
+                event->dst_ip[3] = 0;
+                event->reason = is_ip_blocked ? INGRESS_BLOCK_REASON_SRC_IPV4 : INGRESS_BLOCK_REASON_SRC_PORT;
             } else {
-                // If it's IPv6, you cannot assign a 128-bit address to a 32-bit field.
-                // You must leave src_ip blank here unless you update your 'struct event' 
-                // in shared.h to hold IPv6 address arrays.
-                event->src_ip = 0; 
-                event->dst_ip = 0;
+                struct ipv6hdr *ip6 = (struct ipv6hdr *)ip;
+                #pragma unroll
+                for(int i = 0 ; i < 4 ; i++) {
+                    event->src_ip[i] = ip6->saddr.s6_addr32[i];
+                    event->dst_ip[i] = ip6->daddr.s6_addr32[i];
+                }
+                event->reason = is_ip_blocked ? INGRESS_BLOCK_REASON_SRC_IPV6 : INGRESS_BLOCK_REASON_SRC_PORT;
             }
             event->src_port = sport;
             event->dst_port = dport;
             event->protocol = protocol;
-            event->reason = is_ip_blocked ? INGRESS_BLOCK_REASON_SRC_IPV4 : INGRESS_BLOCK_REASON_SRC_PORT;
             event->event_type = INGRESS_BLOCKED_EVENT;
             bpf_ringbuf_submit(event, 0);
         }

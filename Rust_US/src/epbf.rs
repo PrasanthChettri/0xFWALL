@@ -37,6 +37,13 @@ enum c_action {
 
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
+struct c_ipv6_rule {
+   prefix_len: u32 ,  
+   addr: [u32; 4] ,  
+}
+
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
 struct c_ipv4_rule {
    prefix_len: u32 ,  
    addr: u32 ,  
@@ -52,34 +59,56 @@ struct c_port_rule {
 #[derive(Debug, Copy, Clone)]
 pub struct Event {
     pub id:           u64,
-    pub src_ip:       u32,
-    pub dst_ip:       u32,
+    pub src_ip:       [u32; 4],
+    pub dst_ip:       [u32; 4],
     pub src_port:     u16,
     pub dst_port:     u16,
     pub protocol:     u8,
     pub reason:       u8,
     pub event_type:   u8,
-    _pad:             u8,
+    pub ip_type:      u8,
 }
 
 impl fmt::Display for Event {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let src_ip = Ipv4Addr::from(u32::from_be(self.src_ip));
-        let dst_ip = Ipv4Addr::from(u32::from_be(self.dst_ip));
+        let (src_ip, dst_ip) = if self.ip_type == 0 {
+            // IPv4
+            (
+                std::net::IpAddr::V4(std::net::Ipv4Addr::from(u32::from_be(self.src_ip[0]))),
+                std::net::IpAddr::V4(std::net::Ipv4Addr::from(u32::from_be(self.dst_ip[0])))
+            )
+        } else {
+            // IPv6
+            let mut s_v6 = [0u8; 16];
+            let mut d_v6 = [0u8; 16];
+            for i in 0..4 {
+                let s_bytes = self.src_ip[i].to_ne_bytes();
+                let d_bytes = self.dst_ip[i].to_ne_bytes();
+                s_v6[i*4..(i+1)*4].copy_from_slice(&s_bytes);
+                d_v6[i*4..(i+1)*4].copy_from_slice(&d_bytes);
+            }
+            (
+                std::net::IpAddr::V6(std::net::Ipv6Addr::from(s_v6)),
+                std::net::IpAddr::V6(std::net::Ipv6Addr::from(d_v6))
+            )
+        };
+
         let src_port = u16::from_be(self.src_port);
         let dst_port = u16::from_be(self.dst_port);
 
         let reason_str = match self.reason {
-            1 => "IP_BLOCK_INGRESS",
+            1 => "IP_BLOCK_INGRESS_V4",
+            5 => "IP_BLOCK_INGRESS_V6",
             2 => "PORT_BLOCK_INGRESS",
-            3 => "IP_BLOCK_EGRESS",
+            3 => "IP_BLOCK_EGRESS_V4",
+            6 => "IP_BLOCK_EGRESS_V6",
             4 => "PORT_BLOCK_EGRESS" , 
             _ => "UNKNOWN"
         };
 
         write!(
             f,
-            "ID: {:<5} | TYPE: {:<2} | SRC: {:<15}:{:>5} | DST: {:<15}:{:>5} | PROTO: {:>3} | REASON: {}",
+            "ID: {:<5} | TYPE: {:<2} | SRC: {:<39}:{:>5} | DST: {:<39}:{:>5} | PROTO: {:>3} | REASON: {}",
             self.id,
             self.event_type,
             src_ip,
@@ -109,6 +138,7 @@ unsafe extern "C" {
     fn cleanup(bpf_md: *mut c_void);
 
     fn manage_ipv4_rule(ipv4_rule: *const c_ipv4_rule, action: c_int, direction: c_int) -> c_int; 
+    fn manage_ipv6_rule(ipv6_rule: *const c_ipv6_rule, action: c_int, direction: c_int) -> c_int; 
     fn manage_port_rule(port_rule: *const c_port_rule, action: c_int, direction: c_int) -> c_int; 
 
     fn poll_logs(bpf_md: *mut c_void, event_ptr: *mut Event, ms: c_int) -> c_int;
@@ -159,45 +189,57 @@ impl EPBFProgram {
 
         // Convert current rules to HashSets
         let c_ipv4_ingress_set: HashSet<_> = current_unwrapped.ingress.blocked_ipv4.iter().cloned().collect();
+        let c_ipv6_ingress_set: HashSet<_> = current_unwrapped.ingress.blocked_ipv6.iter().cloned().collect();
         let c_ipv4_egress_set: HashSet<_> = current_unwrapped.egress.blocked_ipv4.iter().cloned().collect();
+        let c_ipv6_egress_set: HashSet<_> = current_unwrapped.egress.blocked_ipv6.iter().cloned().collect();
         let c_port_ingress_set: HashSet<_> = current_unwrapped.ingress.blocked_ports.iter().cloned().collect();
         let c_port_egress_set: HashSet<_> = current_unwrapped.egress.blocked_ports.iter().cloned().collect();
 
         // Convert new rules to HashSets
         let n_ipv4_ingress_set: HashSet<_> = new_rules.ingress.blocked_ipv4.iter().cloned().collect();
+        let n_ipv6_ingress_set: HashSet<_> = new_rules.ingress.blocked_ipv6.iter().cloned().collect();
         let n_ipv4_egress_set: HashSet<_> = new_rules.egress.blocked_ipv4.iter().cloned().collect();
+        let n_ipv6_egress_set: HashSet<_> = new_rules.egress.blocked_ipv6.iter().cloned().collect();
         let n_port_ingress_set: HashSet<_> = new_rules.ingress.blocked_ports.iter().cloned().collect();
         let n_port_egress_set: HashSet<_> = new_rules.egress.blocked_ports.iter().cloned().collect();
 
         // Calculate "to delete"
         let ipv4_ingress_to_delete: Vec<_> = c_ipv4_ingress_set.difference(&n_ipv4_ingress_set).cloned().collect();
+        let ipv6_ingress_to_delete: Vec<_> = c_ipv6_ingress_set.difference(&n_ipv6_ingress_set).cloned().collect();
         let ipv4_egress_to_delete: Vec<_> = c_ipv4_egress_set.difference(&n_ipv4_egress_set).cloned().collect();
+        let ipv6_egress_to_delete: Vec<_> = c_ipv6_egress_set.difference(&n_ipv6_egress_set).cloned().collect();
         let port_ingress_to_delete: Vec<_> = c_port_ingress_set.difference(&n_port_ingress_set).cloned().collect();
         let port_egress_to_delete: Vec<_> = c_port_egress_set.difference(&n_port_egress_set).cloned().collect();
 
         // Calculate "to add" (upsert)
         let ipv4_ingress_to_add: Vec<_> = n_ipv4_ingress_set.difference(&c_ipv4_ingress_set).cloned().collect();
+        let ipv6_ingress_to_add: Vec<_> = n_ipv6_ingress_set.difference(&c_ipv6_ingress_set).cloned().collect();
         let ipv4_egress_to_add: Vec<_> = n_ipv4_egress_set.difference(&c_ipv4_egress_set).cloned().collect();
+        let ipv6_egress_to_add: Vec<_> = n_ipv6_egress_set.difference(&c_ipv6_egress_set).cloned().collect();
         let port_ingress_to_add: Vec<_> = n_port_ingress_set.difference(&c_port_ingress_set).cloned().collect();
         let port_egress_to_add: Vec<_> = n_port_egress_set.difference(&c_port_egress_set).cloned().collect();
 
         let to_delete_rules = Rules {
             ingress: RuleSet {
                 blocked_ipv4: ipv4_ingress_to_delete,
+                blocked_ipv6: ipv6_ingress_to_delete,
                 blocked_ports: port_ingress_to_delete,
             },
             egress: RuleSet {
                 blocked_ipv4: ipv4_egress_to_delete,
+                blocked_ipv6: ipv6_egress_to_delete,
                 blocked_ports: port_egress_to_delete,
             },
         };
         let to_add_rules = Rules {
             ingress: RuleSet {
                 blocked_ipv4: ipv4_ingress_to_add,
+                blocked_ipv6: ipv6_ingress_to_add,
                 blocked_ports: port_ingress_to_add,
             },
             egress: RuleSet {
                 blocked_ipv4: ipv4_egress_to_add,
+                blocked_ipv6: ipv6_egress_to_add,
                 blocked_ports: port_egress_to_add,
             },
         };
@@ -230,6 +272,23 @@ impl EPBFProgram {
             }
         }
 
+        // Ingress IPv6
+        for ip_net in &rules.ingress.blocked_ipv6 {
+            let octets = ip_net.addr().octets();
+            let mut addr = [0u32; 4];
+            for i in 0..4 {
+                addr[i] = u32::from_ne_bytes([octets[i*4], octets[i*4+1], octets[i*4+2], octets[i*4+3]]);
+            }
+            let c_rule = c_ipv6_rule {
+                prefix_len: ip_net.prefix_len() as u32,
+                addr,
+            };
+            match unsafe { manage_ipv6_rule(&c_rule as *const c_ipv6_rule, c_action::UPSERT as i32, c_direction::INGRESS as i32) } {
+                0 => {},
+                err => return Err(err),
+            }
+        }
+
         // Ingress Ports
         for port in &rules.ingress.blocked_ports {
             let c_rule = c_port_rule { port: port.to_be() };
@@ -246,6 +305,23 @@ impl EPBFProgram {
                 addr: u32::from(ip_net.addr()).to_be(),
             };
             match unsafe { manage_ipv4_rule(&c_rule as *const c_ipv4_rule, c_action::UPSERT as i32, c_direction::EGRESS as i32) } {
+                0 => {},
+                err => return Err(err),
+            }
+        }
+
+        // Egress IPv6
+        for ip_net in &rules.egress.blocked_ipv6 {
+            let octets = ip_net.addr().octets();
+            let mut addr = [0u32; 4];
+            for i in 0..4 {
+                addr[i] = u32::from_ne_bytes([octets[i*4], octets[i*4+1], octets[i*4+2], octets[i*4+3]]);
+            }
+            let c_rule = c_ipv6_rule {
+                prefix_len: ip_net.prefix_len() as u32,
+                addr,
+            };
+            match unsafe { manage_ipv6_rule(&c_rule as *const c_ipv6_rule, c_action::UPSERT as i32, c_direction::EGRESS as i32) } {
                 0 => {},
                 err => return Err(err),
             }
@@ -275,6 +351,23 @@ impl EPBFProgram {
             }
         }
 
+        // Ingress IPv6
+        for ip_net in &rules.ingress.blocked_ipv6 {
+            let octets = ip_net.addr().octets();
+            let mut addr = [0u32; 4];
+            for i in 0..4 {
+                addr[i] = u32::from_ne_bytes([octets[i*4], octets[i*4+1], octets[i*4+2], octets[i*4+3]]);
+            }
+            let c_rule = c_ipv6_rule {
+                prefix_len: ip_net.prefix_len() as u32,
+                addr,
+            };
+            match unsafe { manage_ipv6_rule(&c_rule as *const c_ipv6_rule, c_action::DELETE as i32, c_direction::INGRESS as i32) } {
+                0 => {},
+                err => return Err(err),
+            }
+        }
+
         // Ingress Ports
         for port in &rules.ingress.blocked_ports {
             let c_rule = c_port_rule { port: port.to_be() };
@@ -291,6 +384,23 @@ impl EPBFProgram {
                 addr: u32::from(ip_net.addr()).to_be(),
             };
             match unsafe { manage_ipv4_rule(&c_rule as *const c_ipv4_rule, c_action::DELETE as i32, c_direction::EGRESS as i32) } {
+                0 => {},
+                err => return Err(err),
+            }
+        }
+
+        // Egress IPv6
+        for ip_net in &rules.egress.blocked_ipv6 {
+            let octets = ip_net.addr().octets();
+            let mut addr = [0u32; 4];
+            for i in 0..4 {
+                addr[i] = u32::from_ne_bytes([octets[i*4], octets[i*4+1], octets[i*4+2], octets[i*4+3]]);
+            }
+            let c_rule = c_ipv6_rule {
+                prefix_len: ip_net.prefix_len() as u32,
+                addr,
+            };
+            match unsafe { manage_ipv6_rule(&c_rule as *const c_ipv6_rule, c_action::DELETE as i32, c_direction::EGRESS as i32) } {
                 0 => {},
                 err => return Err(err),
             }
