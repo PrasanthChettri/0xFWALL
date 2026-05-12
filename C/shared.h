@@ -2,6 +2,7 @@
 #define EPBF_FIREWALL_SHARED_H
 
 #include <linux/types.h>
+#include <linux/ipv6.h>
 
 // Macro for stringification
 #define _STR(x) #x
@@ -12,6 +13,7 @@
 #define EVENT_LOG_MAP_ALIAS STR(EVENT_LOG_MAP_ID)
 
 #define MAX_BLOCKED_IPV4 1024
+#define MAX_BLOCKED_IPV6 1024
 #define MAX_BLOCKED_PORT 1024
 #define RULE_ACTION_DROP 1
 
@@ -30,10 +32,12 @@
 
 // Egress (TC) Constants
 #define EGRESS_IPV4_RULE_MAP_ID egress_ipv4_rule_table
+#define INGRESS_IPV6_RULE_MAP_ID egress_ipv6_rule_table
 #define EGRESS_PORT_RULE_MAP_ID egress_port_rule_table
 #define EGRESS_PROG_ID tc_prog
 
 #define EGRESS_IPV4_RULE_MAP_ALIAS STR(EGRESS_IPV4_RULE_MAP_ID)
+#define EGRESS_IPV6_RULE_MAP_ALIAS STR(EGRESS_IPV6_RULE_MAP_ID)
 #define EGRESS_PORT_RULE_MAP_ALIAS STR(EGRESS_PORT_RULE_MAP_ID)
 #define EGRESS_PROG_NAME STR(EGRESS_PROG_ID)
 
@@ -64,6 +68,11 @@ struct rule_table {
     int port_count;
 };
 
+struct ipv6_rule_key {
+    __u32 prefixlen;
+    struct in6_addr addr ; 
+};
+
 struct ipv4_rule_key {
     __u32 prefixlen;
     __u32 addr;
@@ -79,8 +88,8 @@ struct port_rule_key {
 
 struct event {
     __u64 id; 
-    __u32 src_ip;
-    __u32 dst_ip;
+    __u32 src_ip[4];
+    __u32 dst_ip[4];
     __u16 src_port;
     __u16 dst_port;
     __s8 protocol;

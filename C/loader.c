@@ -91,8 +91,11 @@ int load_xdp(const char *obj_path, const char *ifname) {
         return -1;
     }
 
-    bm->xdp_link = bpf_program__attach_xdp(bm->ingress_prog,bm->ingress_ifindex) ;
-    return err;
+    bm->xdp_link = bpf_program__attach_xdp(bm->ingress_prog, bm->ingress_ifindex);
+    if (libbpf_get_error(bm->xdp_link)) {
+        return -1;
+    }
+    return 0;
 }
 
 int load_tc(const char* obj_path, const char* ifname) {
@@ -138,9 +141,9 @@ int load_tc(const char* obj_path, const char* ifname) {
     if (!bm->egress_ifindex) {
         return -1;
     }
-    bm->tc_link = bpf_program__attach_tcx(bm->egress_prog, bm->egress_ifindex, NULL) ; 
-    if (err) {
-        return err;
+    bm->tc_link = bpf_program__attach_tcx(bm->egress_prog, bm->egress_ifindex, NULL); 
+    if (libbpf_get_error(bm->tc_link)) {
+        return -1;
     }
 
     return 0;

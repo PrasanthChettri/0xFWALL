@@ -12,7 +12,7 @@ fn test_sighup_reloads_rules() {
     let mut rules_file = NamedTempFile::new().unwrap();
     // Assuming your rules format is JSON. You might need to adapt this 
     // if your real `rules.json` uses a different format.
-    fs::write(rules_file.path(), r#"{"blocked_ips": ["1.1.1.1"]}"#).unwrap();
+    fs::write(rules_file.path(), r#"{"ingress": {"blocked_ipv4": ["1.1.1.1/32"], "blocked_ports": []}, "egress": {"blocked_ipv4": [], "blocked_ports": []}}"#).unwrap();
 
     // 2. Set up a temporary working directory to isolate the test.
     let test_dir = tempfile::tempdir().unwrap();
@@ -55,7 +55,7 @@ interface: "lo"
     }
 
     // 4. Modify the rules file to simulate a configuration change
-    fs::write(rules_file.path(), r#"{"blocked_ips": ["1.1.1.1", "8.8.8.8"]}"#).unwrap();
+    fs::write(rules_file.path(), r#"{"ingress": {"blocked_ipv4": ["1.1.1.1/32", "8.8.8.8/32"], "blocked_ports": []}, "egress": {"blocked_ipv4": [], "blocked_ports": []}}"#).unwrap();
 
     // 5. Send SIGHUP to the application
     let pid = Pid::from_raw(child.id() as i32);
