@@ -19,6 +19,15 @@ struct {
     __uint(map_flags, BPF_F_NO_PREALLOC);
 } INGRESS_IPV4_RULE_MAP_ID SEC(".maps");
 
+struct {
+    __uint(type, BPF_MAP_TYPE_LPM_TRIE);
+    __uint(max_entries, MAX_BLOCKED_IPV6);
+    __type(key, struct ipv6_rule_key);
+    __type(value, struct rule_value);
+    __uint(map_flags, BPF_F_NO_PREALLOC);
+} INGRESS_IPV6_RULE_MAP_ID SEC(".maps");
+
+
 
 struct {
     __uint(type, BPF_MAP_TYPE_HASH);
@@ -32,6 +41,14 @@ struct {
 static __always_inline int check_ip4_blocklist(__u32 saddr) {
     struct ipv4_rule_key src_key = { .prefixlen = 32, .addr = saddr };
     struct rule_value *src_rule = bpf_map_lookup_elem(&INGRESS_IPV4_RULE_MAP_ID, &src_key);
+    if (src_rule && src_rule->action == RULE_ACTION_DROP)
+        return 1;
+    return 0; 
+}
+
+static __always_inline int check_ip6_blocklist(struct in6_addr saddr) {
+    struct ipv6_rule_key src_key = { .prefixlen = 128, .addr = saddr };
+    struct rule_value *src_rule = bpf_map_lookup_elem(&INGRESS_IPV6_RULE_MAP_ID, &src_key);
     if (src_rule && src_rule->action == RULE_ACTION_DROP)
         return 1;
     return 0; 
@@ -115,7 +132,7 @@ int INGRESS_PROG_ID(struct xdp_md *ctx)
         protocol = ip4->protocol ; 
         ip_type = IPTYPE_IPV4 ; 
     }
-    else if (eth->h_proto != __constant_htons(ETH_P_IPV6)) {
+    else if (eth->h_proto == __constant_htons(ETH_P_IPV6)) {
         struct ipv6hdr * ip6 = (struct ipv6hdr *)ip;
         if ( (void *)(ip6 + 1) > data_end )  goto pass ;
         protocol = ip6->nexthdr ; 
@@ -123,9 +140,12 @@ int INGRESS_PROG_ID(struct xdp_md *ctx)
     } else goto pass ; 
 
     __u16 sport = 0, dport = 0;
-    __u8 is_ip_blocked = 1 ; 
+    __u8 is_ip_blocked = 0 ; 
     if(ip_type == IPTYPE_IPV4)
-        __u8 is_ip_blocked = check_ip4_blocklist(((struct iphdr *)ip)->saddr) ; 
+        is_ip_blocked = check_ip4_blocklist(((struct iphdr *)ip)->saddr) ; 
+
+    if(ip_type == IPTYPE_IPV6)
+        is_ip_blocked = check_ip6_blocklist(((struct ipv6hdr *)ip)->saddr) ; 
 
     __u8 is_port_blocked = extract_and_check_port_blocklist(ip, data_end, &sport, &dport, ip_type) ; 
     if(is_ip_blocked | is_port_blocked){
@@ -133,21 +153,30 @@ int INGRESS_PROG_ID(struct xdp_md *ctx)
         event = bpf_ringbuf_reserve(&EVENT_LOG_MAP_ID, sizeof(*event), 0);
         if (event) {
             event->id = ++_id ; 
+            event->ip_type = ip_type ; 
             if (ip_type == IPTYPE_IPV4) {
                 struct iphdr *ip4 = (struct iphdr *)ip;
-                event->src_ip = ip4->saddr;
-                event->dst_ip = ip4->daddr;
+                event->src_ip[0] = ip4->saddr;
+                event->src_ip[1] = 0;
+                event->src_ip[2] = 0;
+                event->src_ip[3] = 0;
+                event->dst_ip[0] = ip4->daddr;
+                event->dst_ip[1] = 0;
+                event->dst_ip[2] = 0;
+                event->dst_ip[3] = 0;
+                event->reason = is_ip_blocked ? INGRESS_BLOCK_REASON_SRC_IPV4 : INGRESS_BLOCK_REASON_SRC_PORT;
             } else {
-                // If it's IPv6, you cannot assign a 128-bit address to a 32-bit field.
-                // You must leave src_ip blank here unless you update your 'struct event' 
-                // in shared.h to hold IPv6 address arrays.
-                event->src_ip = 0; 
-                event->dst_ip = 0;
+                struct ipv6hdr *ip6 = (struct ipv6hdr *)ip;
+                #pragma unroll
+                for(int i = 0 ; i < 4 ; i++) {
+                    event->src_ip[i] = ip6->saddr.s6_addr32[i];
+                    event->dst_ip[i] = ip6->daddr.s6_addr32[i];
+                }
+                event->reason = is_ip_blocked ? INGRESS_BLOCK_REASON_SRC_IPV6 : INGRESS_BLOCK_REASON_SRC_PORT;
             }
             event->src_port = sport;
             event->dst_port = dport;
             event->protocol = protocol;
-            event->reason = is_ip_blocked ? INGRESS_BLOCK_REASON_SRC_IPV4 : INGRESS_BLOCK_REASON_SRC_PORT;
             event->event_type = INGRESS_BLOCKED_EVENT;
             bpf_ringbuf_submit(event, 0);
         }

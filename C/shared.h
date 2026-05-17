@@ -2,6 +2,7 @@
 #define EPBF_FIREWALL_SHARED_H
 
 #include <linux/types.h>
+#include <linux/ipv6.h>
 
 // Macro for stringification
 #define _STR(x) #x
@@ -18,27 +19,33 @@
 
 // Ingress (XDP) Constants
 #define INGRESS_IPV4_RULE_MAP_ID ingress_ipv4_rule_table
+#define INGRESS_IPV6_RULE_MAP_ID ingress_ipv6_rule_table
 #define INGRESS_PORT_RULE_MAP_ID ingress_port_rule_table
 #define INGRESS_PROG_ID xdp_prog
 
 #define INGRESS_IPV4_RULE_MAP_ALIAS STR(INGRESS_IPV4_RULE_MAP_ID)
+#define INGRESS_IPV6_RULE_MAP_ALIAS STR(INGRESS_IPV6_RULE_MAP_ID)
 #define INGRESS_PORT_RULE_MAP_ALIAS STR(INGRESS_PORT_RULE_MAP_ID)
 #define INGRESS_PROG_NAME STR(INGRESS_PROG_ID)
 
 #define INGRESS_BLOCK_REASON_SRC_IPV4 1
+#define INGRESS_BLOCK_REASON_SRC_IPV6 5
 #define INGRESS_BLOCK_REASON_SRC_PORT 2
 #define INGRESS_BLOCKED_EVENT 1
 
 // Egress (TC) Constants
 #define EGRESS_IPV4_RULE_MAP_ID egress_ipv4_rule_table
+#define EGRESS_IPV6_RULE_MAP_ID egress_ipv6_rule_table
 #define EGRESS_PORT_RULE_MAP_ID egress_port_rule_table
 #define EGRESS_PROG_ID tc_prog
 
 #define EGRESS_IPV4_RULE_MAP_ALIAS STR(EGRESS_IPV4_RULE_MAP_ID)
+#define EGRESS_IPV6_RULE_MAP_ALIAS STR(EGRESS_IPV6_RULE_MAP_ID)
 #define EGRESS_PORT_RULE_MAP_ALIAS STR(EGRESS_PORT_RULE_MAP_ID)
 #define EGRESS_PROG_NAME STR(EGRESS_PROG_ID)
 
 #define EGRESS_BLOCK_REASON_DST_IPV4 3
+#define EGRESS_BLOCK_REASON_DST_IPV6 6
 #define EGRESS_BLOCK_REASON_DST_PORT 4
 #define EGRESS_BLOCKED_EVENT 2
 
@@ -63,6 +70,11 @@ struct rule_table {
     int ipv4_count;
     const __u16 *port_list;
     int port_count;
+};
+
+struct ipv6_rule_key {
+    __u32 prefixlen;
+    struct in6_addr addr ; 
 };
 
 struct ipv4_rule_key {

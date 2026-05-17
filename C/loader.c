@@ -15,8 +15,8 @@ struct bpf_metadata {
     struct bpf_program *ingress_prog;
     struct bpf_program *egress_prog;
 
-    int ingress_prog_fd, ingress_ifindex, ingress_ip_rule_map_fd, ingress_port_rule_map_fd;
-    int egress_prog_fd, egress_ifindex, egress_ip_rule_map_fd, egress_port_rule_map_fd;
+    int ingress_prog_fd, ingress_ifindex, ingress_ipv4_rule_map_fd, ingress_ipv6_rule_map_fd, ingress_port_rule_map_fd;
+    int egress_prog_fd, egress_ifindex, egress_ipv4_rule_map_fd, egress_ipv6_rule_map_fd, egress_port_rule_map_fd;
     struct bpf_link *xdp_link, *tc_link ; 
     int log_map_fd;
     struct ring_buffer *log_rb;
@@ -51,7 +51,7 @@ int handle_log_rb(void *ctx, void *data, size_t len) {
 
 int load_xdp(const char *obj_path, const char *ifname) {
     int err;
-    struct bpf_map *ip_rule_map, *port_rule_map, *log_map;
+    struct bpf_map *ipv4_rule_map, *ipv6_rule_map, *port_rule_map, *log_map;
 
     bm->ingress_obj = bpf_object__open(obj_path);
     if (libbpf_get_error(bm->ingress_obj)) {
@@ -63,20 +63,22 @@ int load_xdp(const char *obj_path, const char *ifname) {
         return err;
     }
 
-    ip_rule_map = bpf_object__find_map_by_name(bm->ingress_obj, INGRESS_IPV4_RULE_MAP_ALIAS);
+    ipv4_rule_map = bpf_object__find_map_by_name(bm->ingress_obj, INGRESS_IPV4_RULE_MAP_ALIAS);
+    ipv6_rule_map = bpf_object__find_map_by_name(bm->ingress_obj, INGRESS_IPV6_RULE_MAP_ALIAS);
     port_rule_map = bpf_object__find_map_by_name(bm->ingress_obj, INGRESS_PORT_RULE_MAP_ALIAS);
     log_map = bpf_object__find_map_by_name(bm->ingress_obj, EVENT_LOG_MAP_ALIAS);
 
-    if (!ip_rule_map || !log_map || !port_rule_map) {
+    if (!ipv4_rule_map || !ipv6_rule_map || !log_map || !port_rule_map) {
         return -1;
     }
 
-    bm->ingress_ip_rule_map_fd = bpf_map__fd(ip_rule_map);
+    bm->ingress_ipv4_rule_map_fd = bpf_map__fd(ipv4_rule_map);
+    bm->ingress_ipv6_rule_map_fd = bpf_map__fd(ipv6_rule_map);
     bm->ingress_port_rule_map_fd = bpf_map__fd(port_rule_map);
     bm->log_map_fd = bpf_map__fd(log_map);
     
     bm->log_rb = ring_buffer__new(bm->log_map_fd, handle_log_rb, bm, NULL);
-    if (bm->ingress_port_rule_map_fd < 0 || bm->ingress_ip_rule_map_fd < 0 || bm->log_map_fd < 0 || !bm->log_rb) {
+    if (bm->ingress_port_rule_map_fd < 0 || bm->ingress_ipv4_rule_map_fd < 0 || bm->ingress_ipv6_rule_map_fd < 0 || bm->log_map_fd < 0 || !bm->log_rb) {
         return -1;
     }
 
@@ -91,13 +93,16 @@ int load_xdp(const char *obj_path, const char *ifname) {
         return -1;
     }
 
-    bm->xdp_link = bpf_program__attach_xdp(bm->ingress_prog,bm->ingress_ifindex) ;
-    return err;
+    bm->xdp_link = bpf_program__attach_xdp(bm->ingress_prog, bm->ingress_ifindex);
+    if (libbpf_get_error(bm->xdp_link)) {
+        return -1;
+    }
+    return 0;
 }
 
 int load_tc(const char* obj_path, const char* ifname) {
     int err;
-    struct bpf_map *ip_rule_map, *port_rule_map, *log_map;
+    struct bpf_map *ipv4_rule_map, *ipv6_rule_map, *port_rule_map, *log_map;
 
     bm->egress_obj = bpf_object__open(obj_path);
     if (libbpf_get_error(bm->egress_obj)) {
@@ -118,14 +123,16 @@ int load_tc(const char* obj_path, const char* ifname) {
         return err;
     }
 
-    ip_rule_map = bpf_object__find_map_by_name(bm->egress_obj, EGRESS_IPV4_RULE_MAP_ALIAS);
+    ipv4_rule_map = bpf_object__find_map_by_name(bm->egress_obj, EGRESS_IPV4_RULE_MAP_ALIAS);
+    ipv6_rule_map = bpf_object__find_map_by_name(bm->egress_obj, EGRESS_IPV6_RULE_MAP_ALIAS);
     port_rule_map = bpf_object__find_map_by_name(bm->egress_obj, EGRESS_PORT_RULE_MAP_ALIAS);
     
-    if (!ip_rule_map || !port_rule_map) {
+    if (!ipv4_rule_map || !ipv6_rule_map || !port_rule_map) {
         return -1;
     }
 
-    bm->egress_ip_rule_map_fd = bpf_map__fd(ip_rule_map);
+    bm->egress_ipv4_rule_map_fd = bpf_map__fd(ipv4_rule_map);
+    bm->egress_ipv6_rule_map_fd = bpf_map__fd(ipv6_rule_map);
     bm->egress_port_rule_map_fd = bpf_map__fd(port_rule_map);
 
     bm->egress_prog = bpf_object__find_program_by_name(bm->egress_obj, EGRESS_PROG_NAME);
@@ -138,9 +145,9 @@ int load_tc(const char* obj_path, const char* ifname) {
     if (!bm->egress_ifindex) {
         return -1;
     }
-    bm->tc_link = bpf_program__attach_tcx(bm->egress_prog, bm->egress_ifindex, NULL) ; 
-    if (err) {
-        return err;
+    bm->tc_link = bpf_program__attach_tcx(bm->egress_prog, bm->egress_ifindex, NULL); 
+    if (libbpf_get_error(bm->tc_link)) {
+        return -1;
     }
 
     return 0;
@@ -232,7 +239,31 @@ int manage_ipv4_rule(const struct ipv4_rule_key *rk, rule_action_t action, rule_
         return -1;
     }
 
-    int fd = (direction == RULE_DIRECTION_INGRESS) ? bm->ingress_ip_rule_map_fd : bm->egress_ip_rule_map_fd;
+    int fd = (direction == RULE_DIRECTION_INGRESS) ? bm->ingress_ipv4_rule_map_fd : bm->egress_ipv4_rule_map_fd;
+    if (fd <= 0) {
+        return -1;
+    }
+
+    int status;
+    switch (action) {
+        case RULE_ACTION_UPSERT:
+            status = bpf_map_update_elem(fd, rk, &rval, BPF_ANY);
+            break;
+        case RULE_ACTION_DELETE:
+            status = bpf_map_delete_elem(fd, rk);
+            break;
+        default:
+            status = -2;
+    }
+    return status;
+}
+
+int manage_ipv6_rule(const struct ipv6_rule_key *rk, rule_action_t action, rule_direction_t direction) {
+    if (!bm || !rk) {
+        return -1;
+    }
+
+    int fd = (direction == RULE_DIRECTION_INGRESS) ? bm->ingress_ipv6_rule_map_fd : bm->egress_ipv6_rule_map_fd;
     if (fd <= 0) {
         return -1;
     }
