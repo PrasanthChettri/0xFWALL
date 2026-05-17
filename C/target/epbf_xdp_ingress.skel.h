@@ -8,6 +8,8 @@
 #include <stdlib.h>
 #include <bpf/libbpf.h>
 
+#define BPF_SKEL_SUPPORTS_MAP_AUTO_ATTACH 1
+
 struct epbf_xdp_ingress {
 	struct bpf_object_skeleton *skeleton;
 	struct bpf_object *obj;
@@ -123,6 +125,7 @@ static inline int
 epbf_xdp_ingress__create_skeleton(struct epbf_xdp_ingress *obj)
 {
 	struct bpf_object_skeleton *s;
+	struct bpf_map_skeleton *map __attribute__((unused));
 	int err;
 
 	s = (struct bpf_object_skeleton *)calloc(1, sizeof(*s));
@@ -137,24 +140,29 @@ epbf_xdp_ingress__create_skeleton(struct epbf_xdp_ingress *obj)
 
 	/* maps */
 	s->map_cnt = 4;
-	s->map_skel_sz = sizeof(*s->maps);
-	s->maps = (struct bpf_map_skeleton *)calloc(s->map_cnt, s->map_skel_sz);
+	s->map_skel_sz = 24;
+	s->maps = (struct bpf_map_skeleton *)calloc(s->map_cnt,
+			sizeof(*s->maps) > 24 ? sizeof(*s->maps) : 24);
 	if (!s->maps) {
 		err = -ENOMEM;
 		goto err;
 	}
 
-	s->maps[0].name = "ingress_ipv4_rule_table";
-	s->maps[0].map = &obj->maps.ingress_ipv4_rule_table;
+	map = (struct bpf_map_skeleton *)((char *)s->maps + 0 * s->map_skel_sz);
+	map->name = "ingress_ipv4_rule_table";
+	map->map = &obj->maps.ingress_ipv4_rule_table;
 
-	s->maps[1].name = "ingress_ipv6_rule_table";
-	s->maps[1].map = &obj->maps.ingress_ipv6_rule_table;
+	map = (struct bpf_map_skeleton *)((char *)s->maps + 1 * s->map_skel_sz);
+	map->name = "ingress_ipv6_rule_table";
+	map->map = &obj->maps.ingress_ipv6_rule_table;
 
-	s->maps[2].name = "ingress_port_rule_table";
-	s->maps[2].map = &obj->maps.ingress_port_rule_table;
+	map = (struct bpf_map_skeleton *)((char *)s->maps + 2 * s->map_skel_sz);
+	map->name = "ingress_port_rule_table";
+	map->map = &obj->maps.ingress_port_rule_table;
 
-	s->maps[3].name = "events";
-	s->maps[3].map = &obj->maps.events;
+	map = (struct bpf_map_skeleton *)((char *)s->maps + 3 * s->map_skel_sz);
+	map->name = "events";
+	map->map = &obj->maps.events;
 
 	/* programs */
 	s->prog_cnt = 1;

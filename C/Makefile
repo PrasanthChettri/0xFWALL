@@ -1,45 +1,47 @@
-# ── Config ───────────────────────────────────────────────────────────────────
-TARGET  := ./target
-CLANG   := clang
-BPFTOOL := /usr/lib/linux-tools/6.8.0-117-generic/bpftool
-AR      := ar
-ARCH    := $(shell uname -m)
+# Variables
+CLANG := clang
+BPFTOOL := bpftool
+AR := ar
+ARCH := $(shell uname -m)
+CFLAGS_BPF := -O2 -g -target bpf -I/usr/include/$(ARCH)-linux-gnu
+CFLAGS_LOADER := -O2 -g
 
-BPF_CFLAGS    := -O2 -g -target bpf -I$(TARGET) -I/usr/include/$(ARCH)-linux-gnu
-LOADER_CFLAGS := -O2 -g -I$(TARGET)
+# Directories
+TARGET_DIR := ./target
 
-# ── Deliverable ───────────────────────────────────────────────────────────────
-.PHONY: all clean
-all: $(TARGET)/libloader.a
+# Files
+BPF_OBJS := $(TARGET_DIR)/epbf_xdp_ingress.o $(TARGET_DIR)/epbf_tc_egress.o
+SKELS := $(TARGET_DIR)/epbf_xdp_ingress.skel.h $(TARGET_DIR)/epbf_tc_egress.skel.h
+LIBLOADER := $(TARGET_DIR)/libloader.a
 
-# ── Stage 1: vmlinux.h ────────────────────────────────────────────────────────
-$(TARGET)/vmlinux.h: | $(TARGET)
-	$(BPFTOOL) btf dump file /sys/kernel/btf/vmlinux format c > $@
+# Default target
+all: $(TARGET_DIR) $(SKELS) $(LIBLOADER)
+	@echo "Build complete: eBPF objects, skeletons, and libloader.a stored in $(TARGET_DIR)"
 
-# ── Stage 2: BPF objects ──────────────────────────────────────────────────────
-$(TARGET)/epbf_xdp_ingress.o: epbf_xdp_ingress.c shared.h epbf_helpers.h shared_krings.h $(TARGET)/vmlinux.h | $(TARGET)
-	$(CLANG) $(BPF_CFLAGS) -c $< -o $@
+# Create target directory
+$(TARGET_DIR):
+	mkdir -p $(TARGET_DIR)
 
-$(TARGET)/epbf_tc_egress.o: epbf_tc_egress.c shared.h epbf_helpers.h shared_krings.h $(TARGET)/vmlinux.h | $(TARGET)
-	$(CLANG) $(BPF_CFLAGS) -c $< -o $@
+# Rule for eBPF ingress
+$(TARGET_DIR)/epbf_xdp_ingress.o: epbf_xdp_ingress.c shared.h epbf_helpers.h
+	$(CLANG) $(CFLAGS_BPF) -c $< -o $@
 
-# ── Stage 3: skeletons ────────────────────────────────────────────────────────
-$(TARGET)/epbf_xdp_ingress.skel.h: $(TARGET)/epbf_xdp_ingress.o
+# Rule for eBPF egress
+$(TARGET_DIR)/epbf_tc_egress.o: epbf_tc_egress.c shared.h epbf_helpers.h
+	$(CLANG) $(CFLAGS_BPF) -c $< -o $@
+
+# Rule for generating skeletons
+$(TARGET_DIR)/%.skel.h: $(TARGET_DIR)/%.o
 	$(BPFTOOL) gen skeleton $< > $@
 
-$(TARGET)/epbf_tc_egress.skel.h: $(TARGET)/epbf_tc_egress.o
-	$(BPFTOOL) gen skeleton $< > $@
+# Rule for the static library
+$(LIBLOADER): loader.c shared.h $(SKELS)
+	$(CLANG) $(CFLAGS_LOADER) -c $< -o $(TARGET_DIR)/loader.o
+	$(AR) rcs $@ $(TARGET_DIR)/loader.o
+	rm $(TARGET_DIR)/loader.o
 
-# ── Stage 4: loader ───────────────────────────────────────────────────────────
-$(TARGET)/loader.o: loader.c shared.h $(TARGET)/epbf_xdp_ingress.skel.h $(TARGET)/epbf_tc_egress.skel.h | $(TARGET)
-	$(CLANG) $(LOADER_CFLAGS) -c $< -o $@
-
-$(TARGET)/libloader.a: $(TARGET)/loader.o
-	$(AR) rcs $@ $^
-
-# ── Utility ───────────────────────────────────────────────────────────────────
-$(TARGET):
-	mkdir -p $@
-
+# Clean target
 clean:
-	rm -rf $(TARGET)
+	rm -rf $(TARGET_DIR)
+
+.PHONY: all clean

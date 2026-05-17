@@ -8,16 +8,16 @@
 #include <linux/if_link.h>
 #include <net/if.h>
 #include "shared.h"
+#include "target/epbf_xdp_ingress.skel.h"
+#include "target/epbf_tc_egress.skel.h"
 
 struct bpf_metadata {
-    struct bpf_object *ingress_obj;
-    struct bpf_object *egress_obj;
-    struct bpf_program *ingress_prog;
-    struct bpf_program *egress_prog;
+    struct epbf_xdp_ingress *ingress_skel;
+    struct epbf_tc_egress *egress_skel;
 
-    int ingress_prog_fd, ingress_ifindex, ingress_ipv4_rule_map_fd, ingress_ipv6_rule_map_fd, ingress_port_rule_map_fd;
-    int egress_prog_fd, egress_ifindex, egress_ipv4_rule_map_fd, egress_ipv6_rule_map_fd, egress_port_rule_map_fd;
-    struct bpf_link *xdp_link, *tc_link ; 
+    int ingress_ifindex, ingress_ipv4_rule_map_fd, ingress_ipv6_rule_map_fd, ingress_port_rule_map_fd;
+    int egress_ifindex, egress_ipv4_rule_map_fd, egress_ipv6_rule_map_fd, egress_port_rule_map_fd;
+    
     int log_map_fd;
     struct ring_buffer *log_rb;
     struct event *latest_event;
@@ -51,50 +51,34 @@ int handle_log_rb(void *ctx, void *data, size_t len) {
 
 int load_xdp(const char *obj_path, const char *ifname) {
     int err;
-    struct bpf_map *ipv4_rule_map, *ipv6_rule_map, *port_rule_map, *log_map;
 
-    bm->ingress_obj = bpf_object__open(obj_path);
-    if (libbpf_get_error(bm->ingress_obj)) {
+    bm->ingress_skel = epbf_xdp_ingress__open();
+    if (!bm->ingress_skel) {
         return -1;
     }
 
-    err = bpf_object__load(bm->ingress_obj);
+    err = epbf_xdp_ingress__load(bm->ingress_skel);
     if (err) {
         return err;
     }
 
-    ipv4_rule_map = bpf_object__find_map_by_name(bm->ingress_obj, INGRESS_IPV4_RULE_MAP_ALIAS);
-    ipv6_rule_map = bpf_object__find_map_by_name(bm->ingress_obj, INGRESS_IPV6_RULE_MAP_ALIAS);
-    port_rule_map = bpf_object__find_map_by_name(bm->ingress_obj, INGRESS_PORT_RULE_MAP_ALIAS);
-    log_map = bpf_object__find_map_by_name(bm->ingress_obj, EVENT_LOG_MAP_ALIAS);
-
-    if (!ipv4_rule_map || !ipv6_rule_map || !log_map || !port_rule_map) {
-        return -1;
-    }
-
-    bm->ingress_ipv4_rule_map_fd = bpf_map__fd(ipv4_rule_map);
-    bm->ingress_ipv6_rule_map_fd = bpf_map__fd(ipv6_rule_map);
-    bm->ingress_port_rule_map_fd = bpf_map__fd(port_rule_map);
-    bm->log_map_fd = bpf_map__fd(log_map);
+    bm->ingress_ipv4_rule_map_fd = bpf_map__fd(bm->ingress_skel->maps.ingress_ipv4_rule_table);
+    bm->ingress_ipv6_rule_map_fd = bpf_map__fd(bm->ingress_skel->maps.ingress_ipv6_rule_table);
+    bm->ingress_port_rule_map_fd = bpf_map__fd(bm->ingress_skel->maps.ingress_port_rule_table);
+    bm->log_map_fd = bpf_map__fd(bm->ingress_skel->maps.events);
     
     bm->log_rb = ring_buffer__new(bm->log_map_fd, handle_log_rb, bm, NULL);
     if (bm->ingress_port_rule_map_fd < 0 || bm->ingress_ipv4_rule_map_fd < 0 || bm->ingress_ipv6_rule_map_fd < 0 || bm->log_map_fd < 0 || !bm->log_rb) {
         return -1;
     }
 
-    bm->ingress_prog = bpf_object__find_program_by_name(bm->ingress_obj, INGRESS_PROG_NAME);
-    if (!bm->ingress_prog) {
-        return -1;
-    }
-    bm->ingress_prog_fd = bpf_program__fd(bm->ingress_prog);
-
     bm->ingress_ifindex = if_nametoindex(ifname);
     if (!bm->ingress_ifindex) {
         return -1;
     }
 
-    bm->xdp_link = bpf_program__attach_xdp(bm->ingress_prog, bm->ingress_ifindex);
-    if (libbpf_get_error(bm->xdp_link)) {
+    bm->ingress_skel->links.xdp_prog = bpf_program__attach_xdp(bm->ingress_skel->progs.xdp_prog, bm->ingress_ifindex);
+    if (libbpf_get_error(bm->ingress_skel->links.xdp_prog)) {
         return -1;
     }
     return 0;
@@ -102,51 +86,36 @@ int load_xdp(const char *obj_path, const char *ifname) {
 
 int load_tc(const char* obj_path, const char* ifname) {
     int err;
-    struct bpf_map *ipv4_rule_map, *ipv6_rule_map, *port_rule_map, *log_map;
 
-    bm->egress_obj = bpf_object__open(obj_path);
-    if (libbpf_get_error(bm->egress_obj)) {
+    bm->egress_skel = epbf_tc_egress__open();
+    if (!bm->egress_skel) {
         return -1;
     }
 
     /* Reuse log map from XDP */
-    log_map = bpf_object__find_map_by_name(bm->egress_obj, EVENT_LOG_MAP_ALIAS);
-    if (log_map && bm->log_map_fd >= 0) {
-        err = bpf_map__reuse_fd(log_map, bm->log_map_fd);
+    if (bm->log_map_fd >= 0) {
+        err = bpf_map__reuse_fd(bm->egress_skel->maps.events, bm->log_map_fd);
         if (err) {
             return err;
         }
     }
 
-    err = bpf_object__load(bm->egress_obj);
+    err = epbf_tc_egress__load(bm->egress_skel);
     if (err) {
         return err;
     }
 
-    ipv4_rule_map = bpf_object__find_map_by_name(bm->egress_obj, EGRESS_IPV4_RULE_MAP_ALIAS);
-    ipv6_rule_map = bpf_object__find_map_by_name(bm->egress_obj, EGRESS_IPV6_RULE_MAP_ALIAS);
-    port_rule_map = bpf_object__find_map_by_name(bm->egress_obj, EGRESS_PORT_RULE_MAP_ALIAS);
-    
-    if (!ipv4_rule_map || !ipv6_rule_map || !port_rule_map) {
-        return -1;
-    }
-
-    bm->egress_ipv4_rule_map_fd = bpf_map__fd(ipv4_rule_map);
-    bm->egress_ipv6_rule_map_fd = bpf_map__fd(ipv6_rule_map);
-    bm->egress_port_rule_map_fd = bpf_map__fd(port_rule_map);
-
-    bm->egress_prog = bpf_object__find_program_by_name(bm->egress_obj, EGRESS_PROG_NAME);
-    if (!bm->egress_prog) {
-        return -1;
-    }
-    bm->egress_prog_fd = bpf_program__fd(bm->egress_prog);
+    bm->egress_ipv4_rule_map_fd = bpf_map__fd(bm->egress_skel->maps.egress_ipv4_rule_table);
+    bm->egress_ipv6_rule_map_fd = bpf_map__fd(bm->egress_skel->maps.egress_ipv6_rule_table);
+    bm->egress_port_rule_map_fd = bpf_map__fd(bm->egress_skel->maps.egress_port_rule_table);
 
     bm->egress_ifindex = if_nametoindex(ifname);
     if (!bm->egress_ifindex) {
         return -1;
     }
-    bm->tc_link = bpf_program__attach_tcx(bm->egress_prog, bm->egress_ifindex, NULL); 
-    if (libbpf_get_error(bm->tc_link)) {
+    
+    bm->egress_skel->links.tc_prog = bpf_program__attach_tcx(bm->egress_skel->progs.tc_prog, bm->egress_ifindex, NULL); 
+    if (libbpf_get_error(bm->egress_skel->links.tc_prog)) {
         return -1;
     }
 
@@ -199,12 +168,11 @@ void cleanup(void *bpf_md) {
     pthread_mutex_unlock(&bpf_md_s->log_rb_lock);
     pthread_mutex_destroy(&bpf_md_s->log_rb_lock);
 
-  
-    if (bpf_md_s->xdp_link) {
-        bpf_link__destroy(bpf_md_s->xdp_link);
+    if (bpf_md_s->ingress_skel) {
+        epbf_xdp_ingress__destroy(bpf_md_s->ingress_skel);
     }
-    if (bpf_md_s->tc_link) {
-        bpf_link__destroy(bpf_md_s->tc_link);
+    if (bpf_md_s->egress_skel) {
+        epbf_tc_egress__destroy(bpf_md_s->egress_skel);
     }
     
     free(bpf_md_s);
