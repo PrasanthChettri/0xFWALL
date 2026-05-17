@@ -33,11 +33,11 @@ int EGRESS_PROG_ID(struct __sk_buff *skb) {
 
     __u8 is_ip_blocked = CHECK_IP_BLOCKLIST(ip, pr.ip_type,
                                         EGRESS_IPV4_RULE_MAP_ID,
-                                        EGRESS_IPV6_RULE_MAP_ID); ; 
+                                        EGRESS_IPV6_RULE_MAP_ID, daddr); ; 
     __u16 sport = 0, dport = 0;
     __u8 l4_proto = 0 ; 
     extract_transport_ports(ip, data_end, pr.ip_type, &sport, &dport, &l4_proto);
-    __u8 is_port_blocked = CHECK_PORT_BLOCKLIST(sport, dport, l4_proto) ; 
+    __u8 is_port_blocked = CHECK_PORT_BLOCKLIST(EGRESS_PORT_RULE_MAP_ID, dport, l4_proto) ; 
 
     if (is_ip_blocked | is_port_blocked) {
         send_event(ip, pr.ip_type, sport, dport, l4_proto,

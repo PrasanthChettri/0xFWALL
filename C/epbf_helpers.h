@@ -66,26 +66,27 @@
         (_rv && _rv->action == RULE_ACTION_DROP) ? 1 : 0;                    \
     })
 
-#define CHECK_IP_BLOCKLIST(ip, ip_type, ipv4_map, ipv6_map)            \
+#define CHECK_IP_BLOCKLIST(ip, ip_type, ipv4_map, ipv6_map, field)            \
 ({                                                                  \
     __u8 _blocked = 0;                                             \
     if ((ip_type) == IPTYPE_IPV4)                                  \
         _blocked = CHECK_IP4_BLOCKLIST(ipv4_map,                   \
-                        ((struct iphdr *)(ip))->daddr);             \
+                        ((struct iphdr *)(ip))->field);             \
     else if ((ip_type) == IPTYPE_IPV6)                             \
         _blocked = CHECK_IP6_BLOCKLIST(ipv6_map,                   \
-                        ((struct ipv6hdr *)(ip))->daddr);           \
+                        ((struct ipv6hdr *)(ip))->field);           \
     _blocked;                                                       \
 })
  
 #define CHECK_PORT_BLOCKLIST(map, _port, l4_proto)                               \
     ({                                                                         \
+        __u8 _res = 0;                                                         \
         struct port_rule_key _kp = { .port = (_port) };                       \
         if (l4_proto == IPPROTO_TCP || l4_proto == IPPROTO_UDP ) {            \
             struct rule_value *_rv = bpf_map_lookup_elem(&(map), &_kp);          \
-            (_rv && _rv->action == RULE_ACTION_DROP) ? 1 : 0;                   \
+            if (_rv && _rv->action == RULE_ACTION_DROP) _res = 1;              \
         }                                                                   \
-        0;                                                                  \
+        _res;                                                                  \
     })
 
 static __always_inline int
