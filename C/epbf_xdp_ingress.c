@@ -110,7 +110,7 @@ static __always_inline int extract_and_check_port_blocklist(void *ip_hdr, void* 
         return 0;
 }
 
-int _id ; 
+
 SEC("xdp")
 int INGRESS_PROG_ID(struct xdp_md *ctx)
 {
