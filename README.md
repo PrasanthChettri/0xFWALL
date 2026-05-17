@@ -110,10 +110,7 @@ Block reasons: `IP_BLOCK_INGRESS`, `PORT_BLOCK_INGRESS`, `IP_BLOCK_EGRESS`, `POR
 ---
 
 ## Current limitations
-
-- IPv4 only — IPv6 traffic is not filtered
+- No single source of truth for FFI structs, C and Rust impl can go out of sync, TODO: use https://github.com/rust-lang/rust-bindgen
 - TCP and UDP only — ICMP rules are not supported
-- No stateful tracking — rules are purely per-packet
-- Single interface per instance
-
+- No stateful tracking — rules are purely per-packet 
 ---
