@@ -12,6 +12,7 @@
 #define EVENT_LOG_MAP_ALIAS STR(EVENT_LOG_MAP_ID)
 
 #define MAX_BLOCKED_IPV4 1024
+#define MAX_BLOCKED_IPV6 1024
 #define MAX_BLOCKED_PORT 1024
 #define RULE_ACTION_DROP 1
 
@@ -79,14 +80,14 @@ struct port_rule_key {
 
 struct event {
     __u64 id; 
-    __u32 src_ip;
-    __u32 dst_ip;
+    __u32 src_ip[4];
+    __u32 dst_ip[4];
     __u16 src_port;
     __u16 dst_port;
     __s8 protocol;
     __u8 reason;
     __u8 event_type;
-    __u8 _pad;
+    __u8 ip_type;
 };
 
 #endif

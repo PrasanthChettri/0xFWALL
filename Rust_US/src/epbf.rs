@@ -52,14 +52,15 @@ struct c_port_rule {
 #[derive(Debug, Copy, Clone)]
 pub struct Event {
     pub id:           u64,
-    pub src_ip:       u32,
-    pub dst_ip:       u32,
+    //pub src_ip:       u32,
+    pub src_ip:     [u32; 4],
+    pub dst_ip:     [u32; 4],
     pub src_port:     u16,
     pub dst_port:     u16,
     pub protocol:     u8,
     pub reason:       u8,
     pub event_type:   u8,
-    _pad:             u8,
+    pub ip_type:      u8,
 }
 
 impl fmt::Display for Event {

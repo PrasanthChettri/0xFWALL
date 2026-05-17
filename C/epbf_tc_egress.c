@@ -9,21 +9,11 @@
 #include "shared.h"
 
 #include "shared_krings.h"
+#include "epbf_helpers.h"
 
-struct {
-    __uint(type, BPF_MAP_TYPE_LPM_TRIE);
-    __uint(max_entries, MAX_BLOCKED_IPV4);
-    __type(key, struct ipv4_rule_key);
-    __type(value, struct rule_value);
-    __uint(map_flags, BPF_F_NO_PREALLOC);
-} EGRESS_IPV4_RULE_MAP_ID SEC(".maps");
-
-struct {
-    __uint(type, BPF_MAP_TYPE_HASH);
-    __uint(max_entries, MAX_BLOCKED_PORT);
-    __type(key, struct port_rule_key);
-    __type(value, struct rule_value);
-} EGRESS_PORT_RULE_MAP_ID SEC(".maps");
+DEFINE_RULE_MAPS(EGRESS_IPV4_RULE_MAP_ID,
+                 EGRESS_IPV6_RULE_MAP_ID,
+                 EGRESS_PORT_RULE_MAP_ID);
 
 static __always_inline int check_ip_blocklist(__u32 daddr) {
     struct ipv4_rule_key dst_key = { .prefixlen = 32, .addr = daddr };
@@ -32,6 +22,7 @@ static __always_inline int check_ip_blocklist(__u32 daddr) {
         return 1;
     return 0; 
 }
+
 
 static __always_inline int extract_and_check_port_blocklist(struct iphdr *ip, void* data_end, __u16 *sport, __u16 *dport) {
     void *l4_start = (void *)ip + (ip->ihl * 4);
@@ -81,6 +72,7 @@ int EGRESS_PROG_ID(struct __sk_buff *skb) {
     __u8 is_port_blocked = extract_and_check_port_blocklist(ip, data_end, &sport, &dport); 
 
     if (is_ip_blocked | is_port_blocked) {
+        /*
         event = bpf_ringbuf_reserve(&EVENT_LOG_MAP_ID, sizeof(*event), 0);
         if (event) {
             event->id = ++_id; 
@@ -93,6 +85,7 @@ int EGRESS_PROG_ID(struct __sk_buff *skb) {
             event->event_type = EGRESS_BLOCKED_EVENT;
             bpf_ringbuf_submit(event, 0);
         }
+        */
         return TC_ACT_SHOT; // Drop packet in TC
     }
 

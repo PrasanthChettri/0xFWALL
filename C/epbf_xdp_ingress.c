@@ -129,6 +129,7 @@ int INGRESS_PROG_ID(struct xdp_md *ctx)
 
     __u8 is_port_blocked = extract_and_check_port_blocklist(ip, data_end, &sport, &dport, ip_type) ; 
     if(is_ip_blocked | is_port_blocked){
+        /*
         event = bpf_ringbuf_reserve(&EVENT_LOG_MAP_ID, sizeof(*event), 0);
         if (event) {
             event->id = ++_id ; 
@@ -150,6 +151,7 @@ int INGRESS_PROG_ID(struct xdp_md *ctx)
             event->event_type = INGRESS_BLOCKED_EVENT;
             bpf_ringbuf_submit(event, 0);
         }
+        */
         goto drop ; 
     }
     pass: 
