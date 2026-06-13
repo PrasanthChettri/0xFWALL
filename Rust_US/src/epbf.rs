@@ -134,7 +134,7 @@ impl Event {
 unsafe extern "C" {
     //fn load_xdp(path: *const c_char, ifname: *const c_char) -> u32;
     //fn load_tc() -> u32;
-    fn load_epbf(xdp_path: *const c_char, tc_path: *const c_char, ifname: *const c_char) -> u32; 
+    fn load_epbf(ifname: *const c_char) -> u32; 
     fn get_bpf_obj() -> *mut c_void;
     fn cleanup(bpf_md: *mut c_void);
 
@@ -168,12 +168,10 @@ impl EPBFProgram {
         self.handle = std::ptr::null_mut() ; 
         Ok(())
     }
-    pub fn attach(ingress_obj_path: &str, egress_obj_path: &str, ifname: &str) -> Result<Arc<Mutex<Self>>, i32> {
-        let iop_cpath   = CString::new(ingress_obj_path).map_err(|_| -1_i32)?;
-        let eop_cpath   = CString::new(egress_obj_path).map_err(|_| -1_i32)?;
+    pub fn attach(ifname: &str) -> Result<Arc<Mutex<Self>>, i32> {
         let c_ifname = CString::new(ifname).map_err(|_| -1_i32)?;
 
-        let err_epbf = unsafe { load_epbf(iop_cpath.as_ptr(), eop_cpath.as_ptr(), c_ifname.as_ptr()) };
+        let err_epbf = unsafe { load_epbf(c_ifname.as_ptr()) };
         if err_epbf != 0 {
             return Err(err_epbf as i32);
         }

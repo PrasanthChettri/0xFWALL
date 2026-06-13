@@ -29,13 +29,24 @@ int INGRESS_PROG_ID(struct xdp_md *ctx)
     if (pr.protocol == -1)
         return XDP_PASS;
 
-    __u8 is_ip_blocked = CHECK_IP_BLOCKLIST(ip, pr.ip_type,
-                                            INGRESS_IPV4_RULE_MAP_ID,
-                                            INGRESS_IPV6_RULE_MAP_ID, saddr);
+
+
 
     __u16 sport = 0, dport = 0;
     __u8 l4_proto = 0;
     extract_transport_ports(ip, data_end, pr.ip_type, &sport, &dport, &l4_proto);
+
+    struct conn_key ck ; 
+    make_conn_key(&ck, ip, ip, pr.ip_type, sport, dport, l4_proto) ; 
+    void* status = bpf_map_lookup_elem(&CONNTRACK_MAP, &ck) ; 
+
+    if(status && *((__u8*)status) == CONNTRACK_SEEN) {
+        return XDP_PASS ; 
+    }
+
+    __u8 is_ip_blocked = CHECK_IP_BLOCKLIST(ip, pr.ip_type,
+                                            INGRESS_IPV4_RULE_MAP_ID,
+                                            INGRESS_IPV6_RULE_MAP_ID, saddr);
     __u8 is_port_blocked = CHECK_PORT_BLOCKLIST(INGRESS_PORT_RULE_MAP_ID, dport, l4_proto);
 
     if (is_ip_blocked | is_port_blocked) {

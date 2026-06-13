@@ -52,7 +52,20 @@
 #define IPTYPE_IPV6 1
 #define IPTYPE_IPV4 0
 
+#define CONNTRACK_MAP conntrack_map 
+#define CONNTRACK_NEW 0 
+#define CONNTRACK_SEEN 1
+
 #define MAX_IPV6_EXT_HDRS 6
+
+struct conn_key {
+    __u32 ip_a[4] ;
+    __u32 ip_b[4] ;
+    __u16 p_a ; 
+    __u16 p_b ; 
+    __u8 proto ; 
+    __u8 ip_type ; 
+} ;
 
 typedef enum {
     RULE_ACTION_UPSERT = 0,

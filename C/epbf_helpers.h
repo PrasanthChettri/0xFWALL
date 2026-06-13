@@ -90,6 +90,30 @@
     })
 
 static __always_inline int
+make_conn_key(struct conn_key *key, void *src_ip, void *dst_ip, int ip_type, 
+        __u16 sport, __u16 dport, __u8 proto)  {
+    __builtin_memset(key, 0, sizeof(struct conn_key)) ; 
+    key->proto = proto ; 
+    key->ip_type = ip_type ; 
+    if (ip_type == IPTYPE_IPV4) {
+        __u32 sip = ((struct iphdr *) src_ip) -> saddr ; 
+        __u32 dip = ((struct iphdr *) dst_ip) -> daddr ; 
+        if (sip > dip) {
+            key->ip_a[0] = sip ; 
+            key->ip_b[0] = dip ; 
+            key->p_a =  sport ; 
+            key->p_b = dport ; 
+        } else {
+            key->ip_a[0] = dip ; 
+            key->ip_b[0] = sip ; 
+            key->p_a =  dport ; 
+            key->p_b = sport ; 
+        }
+        return 0;
+    }
+}
+
+static __always_inline int
 extract_transport_ports(void *ip_hdr, void *data_end, int ip_type,
                         __u16 *sport, __u16 *dport, __u8 *proto_out)
 {
@@ -109,7 +133,7 @@ extract_transport_ports(void *ip_hdr, void *data_end, int ip_type,
  
         #pragma unroll
         for (int i = 0; i < MAX_IPV6_EXT_HDRS; i++) {
-            if (protocol == IPPROTO_TCP || protocol == IPPROTO_UDP)
+            if (protocol == IPPROTO_TCP || protocol == IPPROTO_UDP || protocol == IPPROTO_ICMP)
                 break;
             if (protocol == IPPROTO_HOPOPTS ||
                 protocol == IPPROTO_ROUTING ||
@@ -145,7 +169,8 @@ extract_transport_ports(void *ip_hdr, void *data_end, int ip_type,
         if ((void *)(udp + 1) > data_end) return 0;
         *sport = udp->source;
         *dport = udp->dest;
-    } else {
+    } else if (protocol == IPPROTO_ICMP){
+    }else {
         return 0;
     }
  

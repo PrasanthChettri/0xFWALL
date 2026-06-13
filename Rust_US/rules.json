@@ -1,6 +1,6 @@
 {
   "ingress": {
-    "blocked_ipv4": [],
+    "blocked_ipv4": ["192.168.1.10/24"],
     "blocked_ipv6": [],
     "blocked_ports": [22]
   },

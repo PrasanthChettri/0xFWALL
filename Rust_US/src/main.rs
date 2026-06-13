@@ -59,9 +59,7 @@ async fn main() {
         }
     };
 
-    let _handler: Arc<Mutex<EPBFProgram>> = match EPBFProgram::attach(
-        &config.epbf_path_ingress, &config.epbf_path_egress, &config.interface
-    ) {
+    let _handler: Arc<Mutex<EPBFProgram>> = match EPBFProgram::attach( &config.interface ) {
         Ok(xdp) => xdp,
         Err(err) => {
             log_tx.write(format!("attach failed: {err}")).await;

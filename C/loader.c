@@ -49,7 +49,7 @@ int handle_log_rb(void *ctx, void *data, size_t len) {
     return 0;
 }
 
-int load_xdp(const char *obj_path, const char *ifname) {
+int load_xdp(const char *ifname) {
     int err;
 
     bm->ingress_skel = epbf_xdp_ingress__open();
@@ -84,7 +84,7 @@ int load_xdp(const char *obj_path, const char *ifname) {
     return 0;
 }
 
-int load_tc(const char* obj_path, const char* ifname) {
+int load_tc(const char* ifname) {
     int err;
 
     bm->egress_skel = epbf_tc_egress__open();
@@ -122,7 +122,7 @@ int load_tc(const char* obj_path, const char* ifname) {
     return 0;
 }
 
-int load_epbf(const char *xdp_path, const char *tc_path, const char *ifname) {
+int load_epbf(const char *ifname) {
     int err;
     
     bm = malloc(sizeof(struct bpf_metadata));
@@ -138,13 +138,13 @@ int load_epbf(const char *xdp_path, const char *tc_path, const char *ifname) {
         return -1;
     }
 
-    err = load_xdp(xdp_path, ifname);
+    err = load_xdp(ifname);
     if (err) {
         cleanup(bm);
         return err;
     }
 
-    err = load_tc(tc_path, ifname);
+    err = load_tc(ifname);
     if (err) {
         cleanup(bm);
         return err;
